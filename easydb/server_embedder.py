@@ -12,8 +12,8 @@ import socket
 import subprocess
 import time
 import urllib.request
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from .llama_bin import cache_dir, ensure_server_binary
 
@@ -61,12 +61,12 @@ class ManagedLlamaServer:
         binary = ensure_server_binary(use_vulkan=self.use_vulkan)
         self.port = _free_port()
         self.base_url = f"http://127.0.0.1:{self.port}"
-        log = open(self.log_path, "ab")
-        self._proc = subprocess.Popen(
-            [str(binary), "-m", str(self.model_path), "--embeddings", "--port", str(self.port)],
-            stdout=log,
-            stderr=subprocess.STDOUT,
-        )
+        with open(self.log_path, "ab") as log:
+            self._proc = subprocess.Popen(
+                [str(binary), "-m", str(self.model_path), "--embeddings", "--port", str(self.port)],
+                stdout=log,
+                stderr=subprocess.STDOUT,
+            )
         deadline = time.time() + self.startup_timeout
         last_err = ""
         while time.time() < deadline:
@@ -78,7 +78,7 @@ class ManagedLlamaServer:
                 with urllib.request.urlopen(self.base_url + "/health", timeout=5) as r:
                     if r.status == 200:
                         return self.base_url
-            except Exception as exc:  # server not up yet
+            except OSError as exc:  # server not up yet
                 last_err = str(exc)
             time.sleep(0.5)
         self.close()
@@ -108,7 +108,7 @@ class ManagedLlamaServer:
             except subprocess.TimeoutExpired:
                 proc.kill()
 
-    def __enter__(self) -> ManagedLlamaServer:
+    def __enter__(self) -> ManagedLlamaServer:  # noqa: PYI034
         self.start()
         return self
 
@@ -118,7 +118,7 @@ class ManagedLlamaServer:
     def __del__(self) -> None:  # best-effort cleanup
         try:
             self.close()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - best-effort cleanup in __del__
             pass
 
 

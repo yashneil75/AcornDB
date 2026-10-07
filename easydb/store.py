@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from .config import EasyDBConfig, EmbedConfig, QdrantConfig
 from .embedder import EmbeddingGemmaEmbedder
@@ -43,15 +44,12 @@ class EasyDB:
         embed: EmbedConfig | None = None,
         embedder: EmbeddingGemmaEmbedder | None = None,
     ) -> None:
+        if config is not None and (qdrant is not None or embed is not None):
+            raise ValueError("pass either config= or qdrant=/embed=, not both")
         self.config = config or EasyDBConfig(
             qdrant=qdrant or QdrantConfig(),
             embed=embed or EmbedConfig(),
         )
-        # Allow overriding sub-configs after the fact.
-        if qdrant is not None and config is None:
-            self.config.qdrant = qdrant
-        if embed is not None and config is None:
-            self.config.embed = embed
         self._embedder = embedder or EmbeddingGemmaEmbedder(self.config.embed)
         self._client = None  # QdrantClient, created lazily
 
@@ -140,7 +138,7 @@ class EasyDB:
             params = info.config.params.vectors  # type: ignore[union-attr]
             # Single-vector collections expose .size/.distance directly.
             size = getattr(params, "size", self.dimension)
-            dist = str(getattr(params, "distance", "?")).split(".")[-1]
+            dist = str(getattr(params, "distance", "?")).split(".")[-1].lower().capitalize()
             out.append(
                 DatabaseInfo(
                     name=col.name,

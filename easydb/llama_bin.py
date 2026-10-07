@@ -77,7 +77,10 @@ def ensure_server_binary(*, use_vulkan: bool = False) -> Path:
             z.extractall(dest_dir)
     else:
         with tarfile.open(archive) as t:
-            t.extractall(dest_dir, filter="data")
+            try:
+                t.extractall(dest_dir, filter="data")
+            except TypeError:  # Python < 3.11.4 without the filter argument
+                t.extractall(dest_dir)
     if not exe_path.exists():
         # Fall back to a recursive search (asset layout varies by platform).
         found = next(dest_dir.rglob(exe), None)

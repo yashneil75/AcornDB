@@ -58,6 +58,11 @@ class QdrantConfig:
     prefer_grpc: bool = False
     timeout: float = 60.0
 
+    def __post_init__(self) -> None:
+        chosen = sum([self.url is not None, self.path is not None, self.in_memory])
+        if chosen > 1:
+            raise ValueError("set only one of url / path / in_memory")
+
 
 @dataclass(slots=True)
 class EasyDBConfig:

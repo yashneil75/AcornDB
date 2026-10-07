@@ -6,7 +6,7 @@ Native dim 768, MRL-truncatable to 512/256/128.
 from __future__ import annotations
 
 import math
-from typing import Sequence
+from collections.abc import Sequence
 
 from .config import EmbedConfig
 

@@ -1,0 +1,32 @@
+[project]
+name = "easydb"
+version = "0.1.0"
+description = "Typed Python library: Qdrant + EmbeddingGemma-2 GGUF (unsloth/embeddinggemma-2-GGUF)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Yashneil Gajjala", email = "yashneil75@gmail.com" }]
+keywords = ["qdrant", "embeddings", "embeddinggemma", "gguf", "vector-db", "llama-cpp"]
+dependencies = [
+  "qdrant-client>=1.10",
+  "huggingface-hub>=0.20",
+  "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+embed = ["llama-cpp-python>=0.2"]
+hub = ["huggingface-hub>=0.20"]
+all = ["llama-cpp-python>=0.2", "huggingface-hub>=0.20"]
+
+[project.scripts]
+easydb-demo = "examples.quickstart:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["easydb"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

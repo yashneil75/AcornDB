@@ -72,6 +72,34 @@ emb.close()
 - Native dim **768**, MRL-truncatable to 512/256/128 via `EmbedConfig(truncate_dim=256)`
 - Context 8192 tokens. Vectors are L2-normalized, distance defaults to Cosine.
 
+## Changing the model
+
+The default GGUF is just `EmbedConfig` defaults (`repo_id`, `filename`,
+`model_dir`). Point at any compatible GGUF like this:
+
+```python
+from acorndb import AcornDB, EmbedConfig, QdrantConfig
+
+embed = EmbedConfig(
+    repo_id="unsloth/embeddinggemma-2-GGUF",
+    filename="embeddinggemma-2-UD-Q4_K_XL.gguf",
+    # model_dir="~/.cache/acorndb/models",  # override cache location
+    # truncate_dim=256,  # must be one of 128/256/512/768
+)
+db = AcornDB(qdrant=QdrantConfig(in_memory=True), embed=embed)
+```
+
+Things to know when you swap models:
+
+- `create_database` auto-sizes to `embedder.dimension` (i.e. `truncate_dim`)
+  unless you pass `vector_size=` explicitly.
+- Vectors from different models are not comparable. Re-embed and re-`add`
+  your texts after switching; old points will score meaninglessly.
+- If the new model has a different dim, recreate the database
+  (`create_database(name, overwrite=True)`) or use a new name — otherwise
+  upserts will fail on size mismatch.
+- First `embed()` call auto-downloads the new file into `model_dir`.
+
 ## API
 
 | Method | Signature | Notes |
@@ -88,3 +116,17 @@ emb.close()
 | `delete_points` | `(database, ids)` | |
 
 See `examples/quickstart.py` for a runnable demo.
+
+## Docs
+
+Full API reference lives in [`docs/`](docs/index.md) (Markdown, rendered on GitHub).
+For local browser viewing, open `docs/index.html` — same content as dependency-free static HTML.
+
+- [Quickstart](docs/quickstart.md) — install, Qdrant setup, minimal demo
+- [AcornDB](docs/api-acorndb.md) — databases, `add`, `search`, `embed`
+- [Config](docs/api-config.md) — `EmbedConfig`, `QdrantConfig`, `AcornDBConfig`
+- [Models](docs/api-models.md) — `DatabaseInfo`, `Document`, `SearchHit`
+- [Embedder](docs/api-embedder.md) — backends, truncation, normalization
+- [Server](docs/api-server.md) — managed `llama-server`
+- [Binaries](docs/api-llama-bin.md) — auto-downloaded prebuilt binaries
+- [Guides](docs/guides.md) — backends, swapping models, Qdrant modes, errors

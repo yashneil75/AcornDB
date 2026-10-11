@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Server — ManagedLlamaServer, parse_embedding_response</title>
+<style>body{font-family:sans-serif;max-width:800px;margin:2em auto;padding:0 1em}pre{background:#f4f4f4;padding:1em;overflow-x:auto}code{background:#f4f4f4}pre code{background:none}table{border-collapse:collapse}th,td{text-align:left}</style>
+</head>
+<body>
+<p><a href="index.html">Docs index</a></p>
+<h1 id="server-managedllamaserver-parse_embedding_response">Server — <code>ManagedLlamaServer</code>, <code>parse_embedding_response</code></h1>
+<p>Source: <code>acorndb/server_embedder.py</code>. Both names re-exported from <code>acorndb/__init__.py</code>.</p>
+<p>Managed localhost <code>llama-server</code>: the invisible embedding backend used automatically when in-process <code>llama-cpp-python</code> cannot load the model (e.g. its bundled llama.cpp predates the model architecture). The binary is auto-downloaded (see <a href="api-llama-bin.html">Binaries</a>), started on 127.0.0.1 with an ephemeral port, and torn down on <code>close()</code>.</p>
+<h2 id="parse_embedding_responsedata-object---listfloat"><code>parse_embedding_response(data: object) -&gt; list[float]</code></h2>
+<p>Handle both server response shapes:</p>
+<ul><li>Old: <code>{&quot;embedding&quot;: [...]}</code> (flat vector, or <code>[ [ ... ] ]</code> nested once)</li><li>New (b11457+): <code>[{&quot;index&quot;: 0, &quot;embedding&quot;: [[...]]}]</code></li></ul>
+<pre><code>from acorndb import parse_embedding_response
+
+parse_embedding_response({&quot;embedding&quot;: [0.1, 0.2, 0.3]})
+# [0.1, 0.2, 0.3]
+
+parse_embedding_response([{&quot;index&quot;: 0, &quot;embedding&quot;: [[0.1, 0.2, 0.3]]}])
+# [0.1, 0.2, 0.3]</code></pre>
+<p>Raises <code>ValueError</code> on any other shape (message truncated to 120 chars).</p>
+<h2 id="managedllamaserver"><code>ManagedLlamaServer</code></h2>
+<p>A <code>llama-server</code> subprocess owned by the library. Start via <code>start()</code>.</p>
+<pre><code>ManagedLlamaServer(
+    model_path: Path | str,
+    *,
+    use_vulkan: bool = False,
+    startup_timeout: float = 180.0,
+)</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Parameter</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>model_path</code></td><td><code>Path | str</code></td><td>required</td><td>GGUF file (usually from <code>EmbedConfig.model_path</code> / <code>ensure_model_downloaded</code>). Stored as <code>Path</code>.</td></tr>
+<tr><td><code>use_vulkan</code></td><td><code>bool</code></td><td><code>False</code></td><td>Select the Windows Vulkan binary via <code>ensure_server_binary</code>.</td></tr>
+<tr><td><code>startup_timeout</code></td><td><code>float</code></td><td><code>180.0</code></td><td>Seconds to wait for <code>/health</code> → 200 before <code>TimeoutError</code>.</td></tr>
+</table>
+<p>Attributes: <code>port: int | None</code>, <code>base_url: str | None</code> (<code>http://127.0.0.1:&lt;port&gt;</code> after <code>start</code>), <code>log_path = ~/.cache/acorndb/bin/llama-server.log</code> (via <code>cache_dir()</code>).</p>
+<h3 id="start---str"><code>start() -&gt; str</code></h3>
+<p>Idempotent: returns existing <code>base_url</code> if already started.</p>
+<ol><li>Resolves the binary via <code>ensure_server_binary(use_vulkan=...)</code>.</li><li>Picks a free 127.0.0.1 port (<code>_free_port</code>), sets <code>base_url</code>.</li><li>Spawns <code>[binary, &quot;-m&quot;, model, &quot;--embeddings&quot;, &quot;--port&quot;, port]</code> with</li></ol>
+<p>stdout+stderr appended to <code>log_path</code>.</p>
+<ol><li>Polls <code>GET base_url/health</code> every 0.5 s until 200 or <code>startup_timeout</code>.</li></ol>
+<ul><li>Process exit during boot → <code>RuntimeError(&quot;llama-server exited during startup; see &lt;log&gt;&quot;)</code>.</li><li>Timeout → <code>close()</code> + <code>TimeoutError(&quot;llama-server did not start in time (...)&quot;)</code>.</li></ul>
+<p>Returns <code>base_url</code> on success.</p>
+<h3 id="embedtext-str---listfloat"><code>embed(text: str) -&gt; list[float]</code></h3>
+<p><code>POST base_url/embedding</code> with body <code>{&quot;content&quot;: text}</code>, 300 s timeout, parsed via <code>parse_embedding_response</code>.</p>
+<p>Raises <code>RuntimeError(&quot;server not started; call start() first&quot;)</code> if <code>start()</code> wasn&#x27;t called.</p>
+<p>Note: this returns the <strong>raw</strong> server vector. Truncation + L2 normalization happen one layer up in <code>EmbeddingGemmaEmbedder._post_process</code>.</p>
+<h3 id="embed_manytexts-sequencestr-batch_size-int-32---listlistfloat"><code>embed_many(texts: Sequence[str], batch_size: int = 32) -&gt; list[list[float]]</code></h3>
+<p>Sequential <code>[self.embed(t) for t in texts]</code>. <code>batch_size</code> is accepted for signature compatibility with the <code>cpp</code> backend but does not change behaviour.</p>
+<h3 id="close---none"><code>close() -&gt; None</code></h3>
+<p>Terminate the subprocess if running (<code>terminate()</code> → <code>wait(15)</code> → <code>kill()</code> fallback), clear <code>_proc</code>. Safe to call repeatedly; also invoked from <code>__exit__</code> and best-effort <code>__del__</code>.</p>
+<h3 id="context-manager-support">Context-manager support</h3>
+<pre><code>from acorndb import ManagedLlamaServer
+
+with ManagedLlamaServer(&quot;/path/to/model.gguf&quot;) as server:
+    vec = server.embed(&quot;hello world&quot;)
+# closed automatically</code></pre>
+<h2 id="wiring">Wiring</h2>
+<p><code>EmbeddingGemmaEmbedder._get_server()</code> (see <a href="api-embedder.html">Embedder</a>) is the normal caller — you rarely construct this class directly. Direct use is for debugging the server path or embedding without the truncation/normalize layer.</p>
+<h2 id="log-file">Log file</h2>
+<p><code>~/.cache/acorndb/bin/llama-server.log</code> — check here first when <code>start()</code> raises <code>RuntimeError</code>. The message includes the exact path.</p>
+<h2 id="see-also">See also</h2>
+<ul><li><a href="api-embedder.html">Embedder</a> — backend selection, post-processing</li><li><a href="api-llama-bin.html">Binaries</a> — <code>ensure_server_binary</code>, <code>LLAMA_BUILD</code></li><li><a href="guides.html">Guides</a> — backend troubleshooting</li></ul>
+<p><a href="index.html">Docs index</a></p>
+</body>
+</html>

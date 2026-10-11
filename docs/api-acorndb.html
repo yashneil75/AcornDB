@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AcornDB — main entry point</title>
+<style>body{font-family:sans-serif;max-width:800px;margin:2em auto;padding:0 1em}pre{background:#f4f4f4;padding:1em;overflow-x:auto}code{background:#f4f4f4}pre code{background:none}table{border-collapse:collapse}th,td{text-align:left}</style>
+</head>
+<body>
+<p><a href="index.html">Docs index</a></p>
+<h1 id="acorndb-main-entry-point"><code>AcornDB</code> — main entry point</h1>
+<p>Source: <code>acorndb/store.py</code>. Re-exported from <code>acorndb/__init__.py</code>.</p>
+<p>One typed object for databases, embedding, and search:</p>
+<pre><code>from acorndb import AcornDB, QdrantConfig
+
+db = AcornDB(qdrant=QdrantConfig(url=&quot;http://localhost:6333&quot;))
+db.create_database(&quot;notes&quot;)
+db.add(&quot;notes&quot;, [&quot;hello world&quot;, &quot;qdrant is fast&quot;])
+hits = db.search(&quot;notes&quot;, &quot;hello&quot;)
+print(hits[0].text, hits[0].score)</code></pre>
+<h2 id="constructor">Constructor</h2>
+<pre><code>AcornDB(
+    config: AcornDBConfig | None = None,
+    *,
+    qdrant: QdrantConfig | None = None,
+    embed: EmbedConfig | None = None,
+    embedder: EmbeddingGemmaEmbedder | None = None,
+)</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Parameter</th><th>Type</th><th>Meaning</th></tr>
+<tr><td><code>config</code></td><td><code>AcornDBConfig | None</code></td><td>Pre-built bundle. Mutually exclusive with <code>qdrant=</code> / <code>embed=</code>.</td></tr>
+<tr><td><code>qdrant</code></td><td><code>QdrantConfig | None</code></td><td>Connection settings. Defaults to <code>QdrantConfig()</code> (in-memory client).</td></tr>
+<tr><td><code>embed</code></td><td><code>EmbedConfig | None</code></td><td>Model settings. Defaults to <code>EmbedConfig()</code> (EmbeddingGemma-2 defaults).</td></tr>
+<tr><td><code>embedder</code></td><td><code>EmbeddingGemmaEmbedder | None</code></td><td>Inject a ready embedder (used by tests to avoid the ~500 MB download). Overrides <code>embed=</code>.</td></tr>
+</table>
+<p>Raises <code>ValueError</code> if <code>config=</code> is combined with <code>qdrant=</code> / <code>embed=</code>.</p>
+<p><code>self.config: AcornDBConfig</code> stores the resolved config. The Qdrant client is created lazily on first use (<code>QdrantClient(&quot;:memory:&quot;)</code> when nothing is configured, so <code>AcornDB()</code> works with zero infra).</p>
+<h2 id="properties">Properties</h2>
+<h3 id="embedder---embeddinggemmaembedder"><code>embedder -&gt; EmbeddingGemmaEmbedder</code></h3>
+<p>The underlying embedder (passed in or constructed from <code>config.embed</code>).</p>
+<h3 id="dimension---int"><code>dimension -&gt; int</code></h3>
+<p>Effective vector size: <code>self._embedder.dimension</code>, i.e. <code>EmbedConfig.truncate_dim</code> (one of 128/256/512/768). <code>create_database</code> auto-sizes to this unless <code>vector_size=</code> is given.</p>
+<h2 id="embedding-passthrough">Embedding passthrough</h2>
+<h3 id="embedtext-str---listfloat"><code>embed(text: str) -&gt; list[float]</code></h3>
+<p>Embed one string → unit-norm vector of length <code>dimension</code>.</p>
+<p>Raises <code>ValueError</code> on empty string (from the embedder).</p>
+<h3 id="embed_manytexts-sequencestr---listlistfloat"><code>embed_many(texts: Sequence[str]) -&gt; list[list[float]]</code></h3>
+<p>Embed many strings. Returns <code>[]</code> for empty input.</p>
+<h2 id="databases">Databases</h2>
+<p>Qdrant collections are exposed as &quot;databases&quot;.</p>
+<h3 id="create_databasename-vector_sizenone-distancenone-overwritefalse---databaseinfo"><code>create_database(name, *, vector_size=None, distance=None, overwrite=False) -&gt; DatabaseInfo</code></h3>
+<pre><code>db.create_database(&quot;notes&quot;, overwrite=True)
+db.create_database(&quot;notes-euclid&quot;, vector_size=256, distance=&quot;Euclid&quot;)</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Parameter</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>name</code></td><td><code>str</code></td><td>required</td><td>Collection name. Must be non-empty.</td></tr>
+<tr><td><code>vector_size</code></td><td><code>int | None</code></td><td><code>None</code> → <code>self.dimension</code></td><td>Vector width. Pass explicitly only when bypassing the embedder (see <code>add_vectors</code>).</td></tr>
+<tr><td><code>distance</code></td><td><code>Distance | None</code></td><td><code>None</code> → <code>config.default_distance</code> (<code>&quot;Cosine&quot;</code>)</td><td>One of <code>&quot;Cosine&quot;</code>, <code>&quot;Euclid&quot;</code>, <code>&quot;Dot&quot;</code>.</td></tr>
+<tr><td><code>overwrite</code></td><td><code>bool</code></td><td><code>False</code></td><td>If <code>True</code> and the collection exists, delete it first.</td></tr>
+</table>
+<p>Raises <code>ValueError</code> if <code>name</code> is empty, or if the collection exists and <code>overwrite=False</code>.</p>
+<p>Returns <code>DatabaseInfo(name, vector_size, distance)</code> (no <code>points_count</code> on create — see <code>list_databases</code>).</p>
+<h3 id="delete_databasename-str---bool"><code>delete_database(name: str) -&gt; bool</code></h3>
+<p>Delete a collection. Returns <code>True</code> if it existed, <code>False</code> otherwise.</p>
+<h3 id="list_databases---listdatabaseinfo"><code>list_databases() -&gt; list[DatabaseInfo]</code></h3>
+<p>List all collections with vector params + point counts. Returns <code>[]</code> when empty. <code>distance</code> is normalized from Qdrant&#x27;s enum (e.g. <code>Distance.COSINE</code> → <code>&quot;Cosine&quot;</code>).</p>
+<h3 id="database_existsname-str---bool"><code>database_exists(name: str) -&gt; bool</code></h3>
+<p>Thin wrapper over <code>QdrantClient.collection_exists</code>.</p>
+<h2 id="write">Write</h2>
+<h3 id="adddatabase-texts-payloadsnone-idsnone---listpointid"><code>add(database, texts, *, payloads=None, ids=None) -&gt; list[PointId]</code></h3>
+<p>Embed <code>texts</code> and upsert into <code>database</code>. <strong>Auto-creates</strong> the database with the embedder&#x27;s dimension on first use.</p>
+<pre><code># Plain strings:
+ids = db.add(&quot;notes&quot;, [&quot;hello world&quot;, &quot;qdrant is fast&quot;])
+
+# With parallel payloads / ids (lengths must match texts):
+ids = db.add(&quot;notes&quot;, [&quot;a&quot;, &quot;b&quot;], payloads=[{&quot;tag&quot;: &quot;x&quot;}, {}], ids=[1, 2])
+
+# Typed documents (payloads/ids live inside Document, not alongside):
+from acorndb import Document
+ids = db.add(&quot;notes&quot;, [Document(text=&quot;hi&quot;, payload={&quot;tag&quot;: &quot;greet&quot;}, id=7)])</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Parameter</th><th>Type</th><th>Meaning</th></tr>
+<tr><td><code>database</code></td><td><code>str</code></td><td>Target collection (auto-created if missing).</td></tr>
+<tr><td><code>texts</code></td><td><code>Sequence[str] | Sequence[Document]</code></td><td>Either all <code>str</code> or all <code>Document</code>. Mixed/empty raises <code>ValueError</code>.</td></tr>
+<tr><td><code>payloads</code></td><td><code>Sequence[dict] | None</code></td><td>Only with <code>str</code> input; length must match.</td></tr>
+<tr><td><code>ids</code></td><td><code>Sequence[PointId] | None</code></td><td>Only with <code>str</code> input; length must match. Missing ids become <code>uuid4</code> strings.</td></tr>
+</table>
+<p>Storage detail: each point payload is <code>{&quot;text&quot;: &lt;text&gt;, **payload}</code>. Returns the point ids used (supplied or generated).</p>
+<p>Raises <code>ValueError</code> if <code>texts</code> is empty, if <code>Document</code> input is combined with <code>payloads=</code>/<code>ids=</code>, or on length mismatch.</p>
+<h3 id="add_vectorsdatabase-vectors-textsnone-payloadsnone-idsnone---listpointid"><code>add_vectors(database, vectors, texts=None, *, payloads=None, ids=None) -&gt; list[PointId]</code></h3>
+<p>Upsert pre-computed vectors, skipping the embedder. Useful for migration or custom embedding pipelines.</p>
+<pre><code>db.add_vectors(&quot;notes&quot;, [[0.1, 0.2, ...]], texts=[&quot;hello&quot;], ids=[&quot;custom-1&quot;])</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Parameter</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>vectors</code></td><td><code>Sequence[Sequence[float]]</code></td><td>required</td><td>One vector per point. Empty → returns <code>[]</code> without touching Qdrant.</td></tr>
+<tr><td><code>texts</code></td><td><code>Sequence[str] | None</code></td><td><code>None</code> → <code>[&quot;&quot;, ...]</code></td><td>Stored under payload key <code>&quot;text&quot;</code> (empty strings are omitted from payload). Length must equal <code>len(vectors)</code>.</td></tr>
+<tr><td><code>payloads</code></td><td><code>Sequence[dict] | None</code></td><td><code>None</code> → <code>[{}, ...]</code></td><td>Extra payload per point.</td></tr>
+<tr><td><code>ids</code></td><td><code>Sequence[PointId] | None</code></td><td><code>None</code> → <code>uuid4</code> strings</td><td>Point ids.</td></tr>
+</table>
+<p>If the collection is missing it is auto-created with <code>vector_size=len(vectors[0])</code>. Raises <code>ValueError</code> on length mismatch.</p>
+<h3 id="delete_pointsdatabase-str-ids-sequencepointid---none"><code>delete_points(database: str, ids: Sequence[PointId]) -&gt; None</code></h3>
+<p>Delete points by id via <code>models.PointIdsList</code>. No-op if ids don&#x27;t exist (Qdrant semantics).</p>
+<h2 id="search">Search</h2>
+<h3 id="searchdatabase-query-limit10-filternone-with_payloadtrue---listsearchhit"><code>search(database, query, *, limit=10, filter=None, with_payload=True) -&gt; list[SearchHit]</code></h3>
+<p>Semantic search by text (auto-embedded) or raw vector.</p>
+<pre><code>hits = db.search(&quot;notes&quot;, &quot;hello&quot;, limit=2)          # text query
+hits = db.search(&quot;notes&quot;, [0.1, 0.2, ...], limit=5)  # vector query
+
+from qdrant_client import models
+hits = db.search(
+    &quot;notes&quot;,
+    &quot;hello&quot;,
+    limit=5,
+    filter=models.Filter(must=[models.FieldCondition(
+        key=&quot;tag&quot;, match=models.MatchValue(value=&quot;x&quot;))]),
+)</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Parameter</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>query</code></td><td><code>str | Sequence[float]</code></td><td>required</td><td><code>str</code> → embedded via <code>embedder.embed</code>; vector → used as-is.</td></tr>
+<tr><td><code>limit</code></td><td><code>int</code></td><td><code>10</code></td><td>Max hits.</td></tr>
+<tr><td><code>filter</code></td><td><code>qdrant_client.models.Filter | None</code></td><td><code>None</code></td><td>Server-side payload filter.</td></tr>
+<tr><td><code>with_payload</code></td><td><code>bool</code></td><td><code>True</code></td><td>If <code>False</code>, hits carry empty payloads and <code>text=None</code>.</td></tr>
+</table>
+<p>Each hit: <code>SearchHit(id, score, text, payload)</code> where <code>text</code> is popped from payload key <code>&quot;text&quot;</code> (remaining keys stay in <code>payload</code>). Ordered by Qdrant score descending.</p>
+<h2 id="error-summary">Error summary</h2>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Situation</th><th>Exception</th></tr>
+<tr><td><code>config=</code> + <code>qdrant=</code>/<code>embed=</code></td><td><code>ValueError</code></td></tr>
+<tr><td><code>create_database(&quot;&quot;)</code></td><td><code>ValueError</code></td></tr>
+<tr><td><code>create_database</code> on existing name without <code>overwrite=True</code></td><td><code>ValueError</code></td></tr>
+<tr><td><code>add</code> with empty <code>texts</code></td><td><code>ValueError</code></td></tr>
+<tr><td><code>add</code> mixing <code>Document</code> with <code>payloads=</code>/<code>ids=</code></td><td><code>ValueError</code></td></tr>
+<tr><td>Length mismatch (<code>texts</code>/<code>payloads</code>/<code>ids</code>, or <code>vectors</code>/<code>texts</code>)</td><td><code>ValueError</code></td></tr>
+<tr><td><code>embed(&quot;&quot;)</code></td><td><code>ValueError</code> (from embedder)</td></tr>
+<tr><td><code>qdrant-client</code> not installed</td><td><code>ImportError</code> with install hint</td></tr>
+</table>
+<h2 id="see-also">See also</h2>
+<ul><li><a href="api-config.html">Config</a> — <code>AcornDBConfig</code>, <code>QdrantConfig</code>, <code>EmbedConfig</code></li><li><a href="api-models.html">Models</a> — <code>DatabaseInfo</code>, <code>Document</code>, <code>SearchHit</code></li><li><a href="api-embedder.html">Embedder</a> — embedding behaviour behind <code>embed</code>/<code>add</code></li><li><a href="guides.html">Guides</a> — Qdrant modes, swapping models</li></ul>
+<p><a href="index.html">Docs index</a></p>
+</body>
+</html>

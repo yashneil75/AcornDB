@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Guides</title>
+<style>body{font-family:sans-serif;max-width:800px;margin:2em auto;padding:0 1em}pre{background:#f4f4f4;padding:1em;overflow-x:auto}code{background:#f4f4f4}pre code{background:none}table{border-collapse:collapse}th,td{text-align:left}</style>
+</head>
+<body>
+<p><a href="index.html">Docs index</a></p>
+<h1 id="guides">Guides</h1>
+<h2 id="embedding-backends">Embedding backends</h2>
+<p><code>EmbeddingGemmaEmbedder(backend=...)</code> (default <code>&quot;auto&quot;</code>) resolves on first <code>embed()</code> — see <a href="api-embedder.html">Embedder</a>. Check the winner:</p>
+<pre><code>emb = EmbeddingGemmaEmbedder(EmbedConfig(), backend=&quot;auto&quot;)
+emb.embed(&quot;probe&quot;)
+print(emb.backend_used)  # &quot;cpp&quot; or &quot;server&quot;</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr>
+<tr><td><code>backend_used == &quot;server&quot;</code> unexpectedly</td><td>Installed <code>llama-cpp-python</code> wheel bundles a llama.cpp older than embeddinggemma2 support</td><td>Expected on <code>&quot;auto&quot;</code>; either accept the server path or upgrade/rebuild the wheel (CUDA: <code>CMAKE_ARGS=&quot;-DGGML_CUDA=on&quot; pip install llama-cpp-python --force-reinstall --no-cache-dir</code>).</td></tr>
+<tr><td><code>llama-server exited during startup</code></td><td>Bad model path, port conflict, missing binary</td><td>Read the path in the error: <code>~/.cache/acorndb/bin/llama-server.log</code>. Re-run with <code>EmbedConfig(verbose=True)</code> context; verify the GGUF exists at <code>EmbedConfig.model_path</code>.</td></tr>
+<tr><td><code>TimeoutError: llama-server did not start</code></td><td>Slow first boot (model load) or hung process</td><td>Raise <code>ManagedLlamaServer(startup_timeout=...)</code> via a hand-built server, or retry; default 180 s is generous but cold disks can exceed it.</td></tr>
+<tr><td><code>no prebuilt llama.cpp ... binary</code></td><td>Unsupported OS/arch</td><td>Install llama.cpp manually (out of scope for auto-download).</td></tr>
+<tr><td>Vulkan GPU ignored</td><td><code>use_vulkan=False</code> or non-Windows-x64</td><td>Pass <code>EmbeddingGemmaEmbedder(config, backend=&quot;server&quot;, use_vulkan=True)</code> on Windows x64.</td></tr>
+</table>
+<p>Always <code>emb.close()</code> (or use <code>ManagedLlamaServer</code> as a context manager) to stop the subprocess. The log appends across runs at <code>~/.cache/acorndb/bin/llama-server.log</code>.</p>
+<h2 id="swapping-models">Swapping models</h2>
+<p>The default GGUF is just <code>EmbedConfig</code> defaults. Point anywhere compatible:</p>
+<pre><code>from acorndb import AcornDB, EmbedConfig, QdrantConfig
+
+embed = EmbedConfig(
+    repo_id=&quot;unsloth/embeddinggemma-2-GGUF&quot;,
+    filename=&quot;embeddinggemma-2-UD-Q4_K_XL.gguf&quot;,
+    # model_dir=&quot;~/.cache/acorndb/models&quot;,  # override cache location
+    # truncate_dim=256,  # one of 128/256/512/768
+)
+db = AcornDB(qdrant=QdrantConfig(in_memory=True), embed=embed)</code></pre>
+<p>Rules (enforced or implied by <code>store.py</code>):</p>
+<ol><li><code>create_database</code> auto-sizes to <code>embedder.dimension</code> (<code>truncate_dim</code>)</li></ol>
+<p>unless <code>vector_size=</code> is explicit. A dim change therefore requires <code>create_database(name, overwrite=True)</code> or a new collection name — otherwise upserts fail on size mismatch.</p>
+<ol><li>Vectors from different models are <strong>not comparable</strong>. Re-embed and re-<code>add</code></li></ol>
+<p>after switching; old points score meaninglessly.</p>
+<ol><li>First <code>embed()</code> auto-downloads the new file into <code>model_dir</code>.</li><li><code>truncate_dim</code> outside 128/256/512/768 raises <code>ValueError</code> at config</li></ol>
+<p>construction — before any download.</p>
+<p>MRL note: 768 is native; 512/256/128 are prefixes of the same vector, so truncating a single model is safe, but switching model files is not.</p>
+<h2 id="qdrant-connection-modes">Qdrant connection modes</h2>
+<p>Configured via <a href="api-config.html">QdrantConfig</a>; client created lazily.</p>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Mode</th><th>Config</th><th>Durability</th><th>Use for</th></tr>
+<tr><td>In-memory (default)</td><td><code>QdrantConfig(in_memory=True)</code> or <code>QdrantConfig()</code></td><td>None — dies with the process</td><td>Tests, demos, <code>examples/quickstart.py</code></td></tr>
+<tr><td>Server</td><td><code>QdrantConfig(url=&quot;http://localhost:6333&quot;)</code> (+ <code>api_key=</code>, <code>prefer_grpc=</code>, <code>timeout=60.0</code>)</td><td>Persistent (server-side)</td><td>Docker / self-hosted / cloud</td></tr>
+<tr><td>On-disk</td><td><code>QdrantConfig(path=&quot;./qdrant_data&quot;)</code></td><td>Persistent (local dir)</td><td>Single-node persistence without Docker</td></tr>
+</table>
+<p>Exactly one of <code>url</code> / <code>path</code> / <code>in_memory</code> — more raises <code>ValueError</code>. <code>AcornDB()</code> with no args behaves as in-memory.</p>
+<p>Filtered search passes <code>filter=</code> straight to <code>client.query_points(query_filter=...)</code>; build it with <code>qdrant_client.models.Filter</code> (see <a href="api-acorndb.html#search">AcornDB search</a>).</p>
+<h2 id="payloads-and-ids">Payloads and ids</h2>
+<ul><li><code>add</code> stores <code>{&quot;text&quot;: &lt;text&gt;, **payload}</code> per point; <code>search</code> returns</li></ul>
+<p><code>text</code> separately from <code>payload</code> (see <a href="api-models.html#payload-key-convention">Models</a>).</p>
+<ul><li>Don&#x27;t use <code>&quot;text&quot;</code> as your own payload key.</li><li>Missing ids → <code>uuid4</code> strings. Supply <code>ids=</code> (or <code>Document.id</code>) for stable,</li></ul>
+<p>idempotent upserts and easy <code>delete_points</code>.</p>
+<ul><li><code>add_vectors</code> with <code>texts=[&quot;&quot;, ...]</code> omits the <code>&quot;text&quot;</code> key for empty</li></ul>
+<p>entries; <code>SearchHit.text</code> is then <code>None</code>.</p>
+<h2 id="error-handling-cheat-sheet">Error handling cheat-sheet</h2>
+<pre><code>try:
+    db.create_database(&quot;notes&quot;)
+except ValueError as e:
+    # already exists (without overwrite=True) / empty name
+    print(&quot;database:&quot;, e)
+
+try:
+    vec = db.embed(&quot;&quot;)
+except ValueError as e:
+    print(&quot;embed:&quot;, e)  # empty string</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Operation</th><th>Raises</th><th>When</th></tr>
+<tr><td><code>AcornDB(config, qdrant=...)</code></td><td><code>ValueError</code></td><td>Both styles passed</td></tr>
+<tr><td><code>QdrantConfig(url=..., path=...)</code></td><td><code>ValueError</code></td><td>&gt;1 connection mode</td></tr>
+<tr><td><code>EmbedConfig(truncate_dim=100)</code></td><td><code>ValueError</code></td><td>Not in 128/256/512/768</td></tr>
+<tr><td><code>EmbeddingGemmaEmbedder(backend=&quot;x&quot;)</code></td><td><code>ValueError</code></td><td>Unknown backend</td></tr>
+<tr><td><code>create_database</code> existing</td><td><code>ValueError</code></td><td>Without <code>overwrite=True</code></td></tr>
+<tr><td><code>add</code> empty / mixed / mismatched</td><td><code>ValueError</code></td><td>See <a href="api-acorndb.html#error-summary">AcornDB</a></td></tr>
+<tr><td>missing <code>qdrant-client</code></td><td><code>ImportError</code></td><td>Install hint included</td></tr>
+<tr><td>missing <code>llama-cpp-python</code> / <code>huggingface-hub</code></td><td><code>ImportError</code></td><td>Install hint included (<code>[embed]</code> / <code>[hub]</code> / <code>[all]</code>)</td></tr>
+</table>
+<h2 id="testing-without-the-model">Testing without the model</h2>
+<p><code>tests/test_acorndb.py</code> injects a fake embedder — the pattern to copy when you don&#x27;t want the ~500 MB download:</p>
+<pre><code>from acorndb import AcornDB, QdrantConfig
+
+class FakeEmbedder:
+    dimension = 8
+    def embed(self, text): ...
+    def embed_many(self, texts): ...
+
+db = AcornDB(qdrant=QdrantConfig(in_memory=True), embedder=FakeEmbedder())</code></pre>
+<p>Run: <code>pytest</code> (<code>testpaths = [&quot;tests&quot;]</code> in <code>pyproject.toml</code>).</p>
+<p><a href="index.html">Docs index</a></p>
+</body>
+</html>

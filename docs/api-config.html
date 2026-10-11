@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Config — EmbedConfig, QdrantConfig, AcornDBConfig</title>
+<style>body{font-family:sans-serif;max-width:800px;margin:2em auto;padding:0 1em}pre{background:#f4f4f4;padding:1em;overflow-x:auto}code{background:#f4f4f4}pre code{background:none}table{border-collapse:collapse}th,td{text-align:left}</style>
+</head>
+<body>
+<p><a href="index.html">Docs index</a></p>
+<h1 id="config-embedconfig-qdrantconfig-acorndbconfig">Config — <code>EmbedConfig</code>, <code>QdrantConfig</code>, <code>AcornDBConfig</code></h1>
+<p>Source: <code>acorndb/config.py</code>. Re-exported from <code>acorndb/__init__.py</code>.</p>
+<h2 id="constants">Constants</h2>
+<pre><code>DEFAULT_REPO_ID = &quot;unsloth/embeddinggemma-2-GGUF&quot;
+DEFAULT_FILENAME = &quot;embeddinggemma-2-UD-Q4_K_XL.gguf&quot;
+ALLOWED_DIMS = (128, 256, 512, 768)</code></pre>
+<p>These are the defaults baked into <code>EmbedConfig</code>. Import them when you need to reference (not hard-code) the pinned model:</p>
+<pre><code>from acorndb import DEFAULT_FILENAME, DEFAULT_REPO_ID</code></pre>
+<h2 id="embedconfig"><code>EmbedConfig</code></h2>
+<p>How to load the GGUF embedding model. Slots dataclass.</p>
+<pre><code>@dataclass(slots=True)
+class EmbedConfig:
+    repo_id: str = DEFAULT_REPO_ID
+    filename: str = DEFAULT_FILENAME
+    model_dir: Path = ~/.cache/acorndb/models
+    n_ctx: int = 8192
+    n_batch: int = 512
+    n_threads: int | None = None
+    n_gpu_layers: int = -1
+    embedding: bool = True
+    normalize: bool = True
+    truncate_dim: int = 768
+    verbose: bool = False</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Field</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>repo_id</code></td><td><code>str</code></td><td><code>&quot;unsloth/embeddinggemma-2-GGUF&quot;</code></td><td>Hugging Face repo for auto-download.</td></tr>
+<tr><td><code>filename</code></td><td><code>str</code></td><td><code>&quot;embeddinggemma-2-UD-Q4_K_XL.gguf&quot;</code></td><td>GGUF file within the repo.</td></tr>
+<tr><td><code>model_dir</code></td><td><code>Path</code></td><td><code>~/.cache/acorndb/models</code></td><td>Cache dir. <code>str</code> is coerced to <code>Path</code> in <code>__post_init__</code>.</td></tr>
+<tr><td><code>n_ctx</code></td><td><code>int</code></td><td><code>8192</code></td><td>Context window passed to <code>llama_cpp.Llama</code>.</td></tr>
+<tr><td><code>n_batch</code></td><td><code>int</code></td><td><code>512</code></td><td>Batch size passed to <code>llama_cpp.Llama</code>.</td></tr>
+<tr><td><code>n_threads</code></td><td><code>int | None</code></td><td><code>None</code></td><td><code>None</code> → llama.cpp auto. Only forwarded when not <code>None</code>.</td></tr>
+<tr><td><code>n_gpu_layers</code></td><td><code>int</code></td><td><code>-1</code></td><td><code>-1</code> = offload all possible layers.</td></tr>
+<tr><td><code>embedding</code></td><td><code>bool</code></td><td><code>True</code></td><td>Forwarded as <code>embedding=True</code> to <code>Llama</code>.</td></tr>
+<tr><td><code>normalize</code></td><td><code>bool</code></td><td><code>True</code></td><td>L2-normalize output vectors (post-truncation).</td></tr>
+<tr><td><code>truncate_dim</code></td><td><code>int</code></td><td><code>768</code></td><td>MRL truncation. <strong>Must be one of <code>128/256/512/768</code></strong>, else <code>ValueError</code>. Native dim is 768.</td></tr>
+<tr><td><code>verbose</code></td><td><code>bool</code></td><td><code>False</code></td><td>Verbose llama.cpp logging.</td></tr>
+</table>
+<h3 id="model_path---path"><code>model_path -&gt; Path</code></h3>
+<pre><code>@property
+def model_path(self) -&gt; Path:
+    return self.model_dir / self.filename</code></pre>
+<p>Local GGUF path. <code>ensure_model_downloaded()</code> (see <a href="api-embedder.html">Embedder</a>) downloads into exactly this location.</p>
+<h3 id="custom-model-example">Custom model example</h3>
+<pre><code>from acorndb import AcornDB, EmbedConfig, QdrantConfig
+
+embed = EmbedConfig(
+    repo_id=&quot;unsloth/embeddinggemma-2-GGUF&quot;,
+    filename=&quot;embeddinggemma-2-UD-Q4_K_XL.gguf&quot;,
+    truncate_dim=256,   # must be 128/256/512/768
+)
+db = AcornDB(qdrant=QdrantConfig(in_memory=True), embed=embed)</code></pre>
+<p>After switching models: re-embed + re-<code>add</code> (vectors from different models are not comparable), and recreate the database if the dim changed (<code>create_database(name, overwrite=True)</code> or a new name). See <a href="guides.html#swapping-models">Guides — swapping models</a>.</p>
+<h2 id="qdrantconfig"><code>QdrantConfig</code></h2>
+<p>How to connect to Qdrant. Pick <strong>at most one</strong> of <code>url</code> / <code>path</code> / <code>in_memory</code>. Slots dataclass.</p>
+<pre><code>@dataclass(slots=True)
+class QdrantConfig:
+    url: str | None = None
+    api_key: str | None = None
+    path: str | None = None
+    in_memory: bool = False
+    prefer_grpc: bool = False
+    timeout: float = 60.0</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Field</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>url</code></td><td><code>str | None</code></td><td><code>None</code></td><td>e.g. <code>&quot;http://localhost:6333&quot;</code>. Server mode.</td></tr>
+<tr><td><code>api_key</code></td><td><code>str | None</code></td><td><code>None</code></td><td>Passed as <code>api_key=</code> with <code>url=</code>.</td></tr>
+<tr><td><code>path</code></td><td><code>str | None</code></td><td><code>None</code></td><td>e.g. <code>&quot;./qdrant_data&quot;</code>. Local on-disk mode. Mutually exclusive with <code>url</code>.</td></tr>
+<tr><td><code>in_memory</code></td><td><code>bool</code></td><td><code>False</code></td><td><code>QdrantClient(&quot;:memory:&quot;)</code>. Explicit opt-in; the store also defaults here when nothing is set.</td></tr>
+<tr><td><code>prefer_grpc</code></td><td><code>bool</code></td><td><code>False</code></td><td>Forwarded to <code>QdrantClient</code> in <code>url</code> mode.</td></tr>
+<tr><td><code>timeout</code></td><td><code>float</code></td><td><code>60.0</code></td><td>Forwarded to <code>QdrantClient</code> in <code>url</code> mode.</td></tr>
+</table>
+<p><code>__post_init__</code> raises <code>ValueError(&quot;set only one of url / path / in_memory&quot;)</code> if more than one is chosen. Zero chosen is valid → in-memory default in <code>AcornDB._get_client</code>.</p>
+<pre><code>QdrantConfig(url=&quot;http://localhost:6333&quot;)  # server
+QdrantConfig(path=&quot;./qdrant_data&quot;)          # on-disk
+QdrantConfig(in_memory=True)                # ephemeral
+QdrantConfig()                              # also in-memory via store default</code></pre>
+<h2 id="acorndbconfig"><code>AcornDBConfig</code></h2>
+<p>Top-level bundle. Slots dataclass.</p>
+<pre><code>@dataclass(slots=True)
+class AcornDBConfig:
+    embed: EmbedConfig = field(default_factory=EmbedConfig)
+    qdrant: QdrantConfig = field(default_factory=QdrantConfig)
+    default_distance: Distance = &quot;Cosine&quot;</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Field</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>embed</code></td><td><code>EmbedConfig</code></td><td><code>EmbedConfig()</code></td><td>Model settings.</td></tr>
+<tr><td><code>qdrant</code></td><td><code>QdrantConfig</code></td><td><code>QdrantConfig()</code></td><td>Connection settings.</td></tr>
+<tr><td><code>default_distance</code></td><td><code>Distance</code></td><td><code>&quot;Cosine&quot;</code></td><td>Fallback for <code>create_database</code> when <code>distance=</code> is omitted. One of <code>&quot;Cosine&quot;</code>, <code>&quot;Euclid&quot;</code>, <code>&quot;Dot&quot;</code>.</td></tr>
+</table>
+<pre><code>from acorndb import AcornDB, AcornDBConfig, EmbedConfig, QdrantConfig
+
+cfg = AcornDBConfig(
+    embed=EmbedConfig(truncate_dim=256),
+    qdrant=QdrantConfig(url=&quot;http://localhost:6333&quot;),
+    default_distance=&quot;Cosine&quot;,
+)
+db = AcornDB(cfg)
+# Equivalent shortcut:
+db = AcornDB(qdrant=QdrantConfig(url=&quot;http://localhost:6333&quot;),
+             embed=EmbedConfig(truncate_dim=256))</code></pre>
+<h2 id="see-also">See also</h2>
+<ul><li><a href="api-acorndb.html">AcornDB</a> — how configs are consumed</li><li><a href="api-models.html">Models</a> — <code>Distance</code> literal</li><li><a href="guides.html">Guides</a> — Qdrant modes, swapping models</li></ul>
+<p><a href="index.html">Docs index</a></p>
+</body>
+</html>

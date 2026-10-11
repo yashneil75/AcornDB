@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quickstart</title>
+<style>body{font-family:sans-serif;max-width:800px;margin:2em auto;padding:0 1em}pre{background:#f4f4f4;padding:1em;overflow-x:auto}code{background:#f4f4f4}pre code{background:none}table{border-collapse:collapse}th,td{text-align:left}</style>
+</head>
+<body>
+<p><a href="index.html">Docs index</a></p>
+<h1 id="quickstart">Quickstart</h1>
+<h2 id="install">Install</h2>
+<pre><code>pip install -e &quot;.[all]&quot;
+# CPU-only llama-cpp-python is the default wheel.
+# For CUDA:
+CMAKE_ARGS=&quot;-DGGML_CUDA=on&quot; pip install llama-cpp-python --force-reinstall --no-cache-dir</code></pre>
+<p>Optional extras (see <code>pyproject.toml</code>):</p>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Extra</th><th>Installs</th><th>Needed for</th></tr>
+<tr><td><code>embed</code></td><td><code>llama-cpp-python&gt;=0.2</code></td><td>in-process <code>&quot;cpp&quot;</code> backend</td></tr>
+<tr><td><code>hub</code></td><td><code>huggingface-hub&gt;=0.20</code></td><td>auto-download of the GGUF</td></tr>
+<tr><td><code>all</code></td><td>both</td><td>default recommended path</td></tr>
+</table>
+<h2 id="start-qdrant-optional">Start Qdrant (optional)</h2>
+<p><code>AcornDB()</code> defaults to in-memory, so no infra is required. For persistence or sharing, run Qdrant and point at it:</p>
+<pre><code>docker run -p 6333:6333 qdrant/qdrant</code></pre>
+<pre><code>from acorndb import AcornDB, QdrantConfig
+
+# Zero-infra (default):
+db = AcornDB(qdrant=QdrantConfig(in_memory=True))
+
+# Server mode:
+db = AcornDB(qdrant=QdrantConfig(url=&quot;http://localhost:6333&quot;))
+
+# Local on-disk mode:
+db = AcornDB(qdrant=QdrantConfig(path=&quot;./qdrant_data&quot;))</code></pre>
+<p>See <a href="guides.html#qdrant-connection-modes">Qdrant modes</a> for the full matrix.</p>
+<h2 id="minimal-end-to-end">Minimal end-to-end</h2>
+<pre><code>from acorndb import AcornDB, QdrantConfig
+
+db = AcornDB(qdrant=QdrantConfig(in_memory=True))
+
+db.create_database(&quot;demo&quot;, overwrite=True)          # -&gt; DatabaseInfo
+ids = db.add(&quot;demo&quot;, [&quot;hello world&quot;, &quot;qdrant is a vector database&quot;])
+print(&quot;inserted:&quot;, ids)
+
+print(&quot;embed dim:&quot;, len(db.embed(&quot;hello&quot;)))         # 768 by default
+
+for hit in db.search(&quot;demo&quot;, &quot;hello&quot;, limit=2):
+    print(f&quot;{hit.score:.4f} id={hit.id} text={hit.text!r}&quot;)
+
+db.delete_database(&quot;demo&quot;)</code></pre>
+<p>This is <code>examples/quickstart.py</code>. First <code>embed()</code> / <code>add()</code> call auto-downloads <code>embeddinggemma-2-UD-Q4_K_XL.gguf</code> (~500 MB) into <code>~/.cache/acorndb/models/</code> (see <a href="api-embedder.html">Embedder</a>).</p>
+<h2 id="embedder-backends-no-server-ops-needed">Embedder backends (no server ops needed)</h2>
+<pre><code>from acorndb import EmbedConfig, EmbeddingGemmaEmbedder
+
+emb = EmbeddingGemmaEmbedder(EmbedConfig(), backend=&quot;auto&quot;)
+print(emb.embed(&quot;hello world&quot;)[:3], emb.backend_used)
+emb.close()</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th><code>backend=</code></th><th>Behaviour</th></tr>
+<tr><td><code>&quot;cpp&quot;</code></td><td>In-process <code>llama-cpp-python</code>. Fastest, but requires a wheel whose bundled llama.cpp knows the model arch.</td></tr>
+<tr><td><code>&quot;server&quot;</code></td><td>Library-managed localhost <code>llama-server</code>. Prebuilt binary auto-downloaded to <code>~/.cache/acorndb/bin/</code>, ephemeral port on 127.0.0.1, stopped on <code>close()</code>.</td></tr>
+<tr><td><code>&quot;auto&quot;</code> (default)</td><td>Tries <code>&quot;cpp&quot;</code>, falls back to <code>&quot;server&quot;</code> on <code>ImportError</code> / <code>ValueError</code>. Inspect <code>embedder.backend_used</code> to see which won.</td></tr>
+</table>
+<p>Details: <a href="api-embedder.html">Embedder</a>, <a href="api-server.html">Server</a>, <a href="api-llama-bin.html">Binaries</a>, <a href="guides.html#embedding-backends">Guides — backends</a>.</p>
+<h2 id="next-steps">Next steps</h2>
+<ul><li>Full method reference: <a href="api-acorndb.html">AcornDB</a></li><li>Config knobs: <a href="api-config.html">Config</a></li><li>Typed returns: <a href="api-models.html">Models</a></li><li>Operational notes (swapping models, errors): <a href="guides.html">Guides</a></li></ul>
+<p><a href="index.html">Docs index</a></p>
+</body>
+</html>

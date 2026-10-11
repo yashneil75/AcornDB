@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Models — DatabaseInfo, Document, SearchHit, aliases</title>
+<style>body{font-family:sans-serif;max-width:800px;margin:2em auto;padding:0 1em}pre{background:#f4f4f4;padding:1em;overflow-x:auto}code{background:#f4f4f4}pre code{background:none}table{border-collapse:collapse}th,td{text-align:left}</style>
+</head>
+<body>
+<p><a href="index.html">Docs index</a></p>
+<h1 id="models-databaseinfo-document-searchhit-aliases">Models — <code>DatabaseInfo</code>, <code>Document</code>, <code>SearchHit</code>, aliases</h1>
+<p>Source: <code>acorndb/models.py</code>. Re-exported from <code>acorndb/__init__.py</code>.</p>
+<h2 id="type-aliases">Type aliases</h2>
+<pre><code>Distance = Literal[&quot;Cosine&quot;, &quot;Euclid&quot;, &quot;Dot&quot;]
+PointId = Union[int, str]</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Alias</th><th>Meaning</th></tr>
+<tr><td><code>Distance</code></td><td>Qdrant distance metric names. Literal so editors offer autocomplete. Mapped to <code>qdrant_client.models.Distance</code> (<code>COSINE</code>/<code>EUCLID</code>/<code>DOT</code>) inside <code>store.py::_to_distance</code>.</td></tr>
+<tr><td><code>PointId</code></td><td>Point ids accepted by Qdrant: <code>int</code> or <code>str</code>. Returned by <code>add</code> / <code>add_vectors</code>, carried on <code>Document.id</code> and <code>SearchHit.id</code>.</td></tr>
+</table>
+<h2 id="databaseinfo"><code>DatabaseInfo</code></h2>
+<p>Metadata about one Qdrant collection (one &quot;database&quot;). Frozen + slots dataclass.</p>
+<pre><code>@dataclass(frozen=True, slots=True)
+class DatabaseInfo:
+    name: str
+    vector_size: int
+    distance: str
+    points_count: int | None = None</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Field</th><th>Type</th><th>Meaning</th></tr>
+<tr><td><code>name</code></td><td><code>str</code></td><td>Collection name.</td></tr>
+<tr><td><code>vector_size</code></td><td><code>int</code></td><td>Vector width (embedder dim, or explicit <code>vector_size=</code>).</td></tr>
+<tr><td><code>distance</code></td><td><code>str</code></td><td>Metric name, e.g. <code>&quot;Cosine&quot;</code>.</td></tr>
+<tr><td><code>points_count</code></td><td><code>int | None</code></td><td>Present from <code>list_databases</code> (Qdrant&#x27;s count); <code>None</code> on the <code>create_database</code> return.</td></tr>
+</table>
+<pre><code>info = db.create_database(&quot;notes&quot;, overwrite=True)
+# DatabaseInfo(name=&#x27;notes&#x27;, vector_size=768, distance=&#x27;Cosine&#x27;, points_count=None)
+
+for info in db.list_databases():
+    print(info.name, info.vector_size, info.distance, info.points_count)</code></pre>
+<h2 id="document"><code>Document</code></h2>
+<p>A single text record ready to be embedded + stored. Slots dataclass (mutable).</p>
+<pre><code>@dataclass(slots=True)
+class Document:
+    text: str
+    payload: dict[str, Any] = field(default_factory=dict)
+    id: PointId | None = None
+    vector: list[float] | None = None</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Field</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>text</code></td><td><code>str</code></td><td>required</td><td>Stored under payload key <code>&quot;text&quot;</code>; this is what gets embedded by <code>add</code>.</td></tr>
+<tr><td><code>payload</code></td><td><code>dict[str, Any]</code></td><td><code>{}</code></td><td>Extra payload merged as <code>{<strong>{&quot;text&quot;: text}, </strong>payload}</code> on upsert.</td></tr>
+<tr><td><code>id</code></td><td><code>PointId | None</code></td><td><code>None</code></td><td>Point id. <code>None</code> → generated <code>uuid4</code> string in <code>add</code>.</td></tr>
+<tr><td><code>vector</code></td><td><code>list[float] | None</code></td><td><code>None</code></td><td>Reserved field; <code>AcornDB.add</code> currently re-embeds <code>text</code> and does not read it. Use <code>add_vectors</code> for pre-computed vectors.</td></tr>
+</table>
+<p>Usage rule (enforced in <code>AcornDB._coerce_documents</code>): when passing <code>list[Document]</code> to <code>add</code>, do <strong>not</strong> also pass <code>payloads=</code> / <code>ids=</code> — they live inside each <code>Document</code>.</p>
+<pre><code>from acorndb import Document
+
+db.add(&quot;notes&quot;, [
+    Document(text=&quot;hello world&quot;, payload={&quot;tag&quot;: &quot;greet&quot;}, id=1),
+    Document(text=&quot;qdrant is fast&quot;),
+])</code></pre>
+<h2 id="searchhit"><code>SearchHit</code></h2>
+<p>One typed search result. Frozen + slots dataclass.</p>
+<pre><code>@dataclass(frozen=True, slots=True)
+class SearchHit:
+    id: PointId
+    score: float
+    text: str | None
+    payload: dict[str, Any]</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Field</th><th>Type</th><th>Meaning</th></tr>
+<tr><td><code>id</code></td><td><code>PointId</code></td><td>Qdrant point id.</td></tr>
+<tr><td><code>score</code></td><td><code>float</code></td><td>Qdrant relevance score (higher = closer under Cosine default).</td></tr>
+<tr><td><code>text</code></td><td><code>str | None</code></td><td>Value of payload key <code>&quot;text&quot;</code>, popped out for convenience. <code>None</code> when missing or when <code>with_payload=False</code>. Non-string values are coerced with <code>str()</code>.</td></tr>
+<tr><td><code>payload</code></td><td><code>dict[str, Any]</code></td><td>Remaining payload after <code>text</code> is removed. Empty when <code>with_payload=False</code>.</td></tr>
+</table>
+<pre><code>hits = db.search(&quot;notes&quot;, &quot;hello&quot;, limit=2)
+for h in hits:
+    print(h.score, h.text, h.payload, h.id)</code></pre>
+<h2 id="payload-key-convention">Payload key convention</h2>
+<p><code>store.py::_TEXT_KEY = &quot;text&quot;</code>. Both <code>add</code> and <code>add_vectors</code> write the human-readable text under <code>&quot;text&quot;</code>; <code>search</code> pops it back into <code>SearchHit.text</code>. Keep your own payload keys distinct from <code>&quot;text&quot;</code> to avoid collisions.</p>
+<h2 id="see-also">See also</h2>
+<ul><li><a href="api-acorndb.html">AcornDB</a> — <code>add</code>, <code>search</code>, <code>list_databases</code> returns</li><li><a href="api-config.html">Config</a> — <code>Distance</code> default</li></ul>
+<p><a href="index.html">Docs index</a></p>
+</body>
+</html>

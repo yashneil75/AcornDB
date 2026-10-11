@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Embedder — EmbeddingGemmaEmbedder</title>
+<style>body{font-family:sans-serif;max-width:800px;margin:2em auto;padding:0 1em}pre{background:#f4f4f4;padding:1em;overflow-x:auto}code{background:#f4f4f4}pre code{background:none}table{border-collapse:collapse}th,td{text-align:left}</style>
+</head>
+<body>
+<p><a href="index.html">Docs index</a></p>
+<h1 id="embedder-embeddinggemmaembedder">Embedder — <code>EmbeddingGemmaEmbedder</code></h1>
+<p>Source: <code>acorndb/embedder.py</code>. Re-exported from <code>acorndb/__init__.py</code>.</p>
+<p>Typed wrapper around the EmbeddingGemma-2 GGUF file (<code>unsloth/embeddinggemma-2-GGUF</code> / <code>embeddinggemma-2-UD-Q4_K_XL.gguf</code>, native dim 768, MRL-truncatable to 512/256/128, context 8192).</p>
+<p>Backend is automatic: in-process <code>llama-cpp-python</code> when it can load the model, otherwise a library-managed localhost <code>llama-server</code> (see <a href="api-server.html">Server</a>). Forced via <code>backend=</code>.</p>
+<pre><code>from acorndb import EmbedConfig, EmbeddingGemmaEmbedder
+
+embedder = EmbeddingGemmaEmbedder(EmbedConfig(truncate_dim=768))
+vec = embedder.embed(&quot;hello world&quot;)   # len 768, L2-normalized</code></pre>
+<h2 id="constructor">Constructor</h2>
+<pre><code>EmbeddingGemmaEmbedder(
+    config: EmbedConfig | None = None,
+    *,
+    backend: str = &quot;auto&quot;,
+    use_vulkan: bool = False,
+)</code></pre>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Parameter</th><th>Type</th><th>Default</th><th>Meaning</th></tr>
+<tr><td><code>config</code></td><td><code>EmbedConfig | None</code></td><td><code>None</code> → <code>EmbedConfig()</code></td><td>Model path, context, truncation, normalization (see <a href="api-config.html">Config</a>).</td></tr>
+<tr><td><code>backend</code></td><td><code>str</code></td><td><code>&quot;auto&quot;</code></td><td><code>&quot;auto&quot;</code> | <code>&quot;cpp&quot;</code> | <code>&quot;server&quot;</code>. Anything else raises <code>ValueError</code>.</td></tr>
+<tr><td><code>use_vulkan</code></td><td><code>bool</code></td><td><code>False</code></td><td>Forwarded to the managed server path (<code>ensure_server_binary(use_vulkan=...)</code>); selects the Windows Vulkan binary.</td></tr>
+</table>
+<p>Attributes set at construction: <code>config</code>, <code>backend</code> (requested mode), <code>use_vulkan</code>, <code>_llm = None</code>, <code>_server = None</code>, <code>backend_used = None</code> (<code>&quot;cpp&quot;</code> / <code>&quot;server&quot;</code> once resolved — inspect after first <code>embed</code>).</p>
+<h3 id="backend-resolution-_get_backend">Backend resolution (<code>_get_backend</code>)</h3>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th><code>backend=</code></th><th>Behaviour</th></tr>
+<tr><td><code>&quot;cpp&quot;</code></td><td><code>backend_used = &quot;cpp&quot;</code>; constructs <code>llama_cpp.Llama</code> (raises <code>ImportError</code> with install hint if missing).</td></tr>
+<tr><td><code>&quot;server&quot;</code></td><td><code>backend_used = &quot;server&quot;</code>; downloads model if needed, starts <code>ManagedLlamaServer</code>.</td></tr>
+<tr><td><code>&quot;auto&quot;</code></td><td>Tries in-process first; on <code>ImportError</code> / <code>ValueError</code> (wheel can&#x27;t load the arch) clears <code>_llm</code>, sets <code>backend_used = &quot;server&quot;</code>, starts the managed server.</td></tr>
+</table>
+<h2 id="properties">Properties</h2>
+<h3 id="dimension---int"><code>dimension -&gt; int</code></h3>
+<p>Effective vector size after MRL truncation: <code>config.truncate_dim</code>.</p>
+<h3 id="model_path---path"><code>model_path -&gt; Path</code></h3>
+<p><code>Path(config.model_path)</code> — local GGUF location (<code>model_dir / filename</code>, default <code>~/.cache/acorndb/models/&lt;filename&gt;</code>).</p>
+<h2 id="setup">Setup</h2>
+<h3 id="ensure_model_downloaded---path"><code>ensure_model_downloaded() -&gt; Path</code></h3>
+<p>Download the GGUF from Hugging Face Hub if missing; return the local path.</p>
+<ul><li>Returns immediately if <code>model_path</code> exists.</li><li>Otherwise <code>hf_hub_download(repo_id, filename, local_dir=model_dir)</code> (creates</li></ul>
+<p>parents), then normalizes to exactly <code>model_path</code> (some hub versions nest differently — renames if resolved paths differ).</p>
+<ul><li>Raises <code>ImportError</code> with install hint (<code>pip install acorndb[hub]</code> or manual</li></ul>
+<p>download path) if <code>huggingface-hub</code> is missing.</p>
+<h3 id="close---none"><code>close() -&gt; None</code></h3>
+<p>Shut down the managed server if one was started; no-op otherwise. Safe to call unconditionally (also called from <code>AcornDB</code> teardown paths and tests).</p>
+<h2 id="core-embedding">Core embedding</h2>
+<p>All outputs go through <code>_post_process</code>: truncate to <code>truncate_dim</code>, then L2-normalize if <code>config.normalize</code> (via <code>_l2_normalize</code>; zero vectors pass through unchanged).</p>
+<h3 id="embedtext-str---listfloat"><code>embed(text: str) -&gt; list[float]</code></h3>
+<p>Embed one string → unit-norm vector of length <code>dimension</code>.</p>
+<p>Raises <code>ValueError</code> on empty string.</p>
+<h3 id="embed_manytexts-sequencestr-batch_size-int-32---listlistfloat"><code>embed_many(texts: Sequence[str], batch_size: int = 32) -&gt; list[list[float]]</code></h3>
+<p>Embed many strings (looped one-at-a-time per batch on either backend — <code>llama_cpp</code> and the <code>/embedding</code> endpoint both take single inputs here).</p>
+<ul><li>Empty input → <code>[]</code> (no backend touched).</li><li>Any empty string in the batch → <code>ValueError</code>.</li><li><code>batch_size</code> controls chunking only, not server parallelism.</li></ul>
+<h3 id="aliases-sentence-transformers-conventions">Aliases (sentence-transformers conventions)</h3>
+<pre><code>embed_query(text: str) -&gt; list[float]          # == embed(text)
+embed_documents(texts: Sequence[str]) -&gt; list[list[float]]  # == embed_many(texts)</code></pre>
+<h2 id="in-process-backend-details-_get_llm">In-process backend details (<code>_get_llm</code>)</h2>
+<p>Lazily constructs <code>llama_cpp.Llama</code> with:</p>
+<pre><code>Llama(
+    model_path=...,
+    embedding=config.embedding,      # True
+    n_ctx=config.n_ctx,              # 8192
+    n_batch=config.n_batch,          # 512
+    n_gpu_layers=config.n_gpu_layers,  # -1
+    verbose=config.verbose,          # False
+    n_threads=...                    # only if config.n_threads is not None
+)</code></pre>
+<p>Then <code>backend.embed(text)</code> is called on the resolved backend object (<code>Llama</code> exposes <code>.embed</code>; <code>ManagedLlamaServer</code> exposes <code>.embed</code> with the same signature, which is why <code>_get_backend</code> is interchangeable).</p>
+<h2 id="server-backend-details-_get_server">Server backend details (<code>_get_server</code>)</h2>
+<p>Ensures the model file, constructs <code>ManagedLlamaServer(model_file, use_vulkan=...)</code>, calls <code>.start()</code>, caches in <code>_server</code>. See <a href="api-server.html">Server</a> and <a href="api-llama-bin.html">Binaries</a>.</p>
+<h2 id="example-check-which-backend-won">Example: check which backend won</h2>
+<pre><code>emb = EmbeddingGemmaEmbedder(EmbedConfig(), backend=&quot;auto&quot;)
+vec = emb.embed(&quot;hello&quot;)
+print(emb.backend_used)  # &quot;cpp&quot; or &quot;server&quot;
+emb.close()</code></pre>
+<h2 id="error-summary">Error summary</h2>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>Situation</th><th>Exception</th></tr>
+<tr><td><code>backend=&quot;bogus&quot;</code></td><td><code>ValueError</code> at construction</td></tr>
+<tr><td><code>embed(&quot;&quot;)</code> / empty member of <code>embed_many</code></td><td><code>ValueError</code></td></tr>
+<tr><td><code>llama-cpp-python</code> missing (<code>&quot;cpp&quot;</code> path)</td><td><code>ImportError</code> with <code>pip install acorndb[embed]</code> hint</td></tr>
+<tr><td><code>huggingface-hub</code> missing + model absent</td><td><code>ImportError</code> with <code>pip install acorndb[hub]</code> hint</td></tr>
+<tr><td><code>truncate_dim</code> not in 128/256/512/768</td><td><code>ValueError</code> (from <code>EmbedConfig</code>)</td></tr>
+<tr><td>Managed server fails to boot</td><td><code>RuntimeError</code> / <code>TimeoutError</code> (from <code>ManagedLlamaServer</code>)</td></tr>
+</table>
+<h2 id="see-also">See also</h2>
+<ul><li><a href="api-config.html">Config</a> — every <code>EmbedConfig</code> knob</li><li><a href="api-server.html">Server</a> — managed <code>llama-server</code> lifecycle + response parsing</li><li><a href="api-llama-bin.html">Binaries</a> — where the server binary comes from</li><li><a href="api-acorndb.html">AcornDB</a> — <code>embed</code> / <code>embed_many</code> passthrough, <code>dimension</code></li></ul>
+<p><a href="index.html">Docs index</a></p>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Binaries — ensure_server_binary, cache_dir, LLAMA_BUILD</title>
+<style>body{font-family:sans-serif;max-width:800px;margin:2em auto;padding:0 1em}pre{background:#f4f4f4;padding:1em;overflow-x:auto}code{background:#f4f4f4}pre code{background:none}table{border-collapse:collapse}th,td{text-align:left}</style>
+</head>
+<body>
+<p><a href="index.html">Docs index</a></p>
+<h1 id="binaries-ensure_server_binary-cache_dir-llama_build">Binaries — <code>ensure_server_binary</code>, <code>cache_dir</code>, <code>LLAMA_BUILD</code></h1>
+<p>Source: <code>acorndb/llama_bin.py</code>. <code>LLAMA_BUILD</code> re-exported from <code>acorndb/__init__.py</code>; <code>cache_dir</code> / <code>ensure_server_binary</code> are imported by <code>server_embedder.py</code>.</p>
+<p>Auto-download of prebuilt llama.cpp binaries so downstream users need no compiler. Pinned to the first nightly containing embeddinggemma2 support.</p>
+<h2 id="constants">Constants</h2>
+<pre><code>LLAMA_BUILD = &quot;b11457&quot;</code></pre>
+<p>First nightly whose master includes ggml-org/llama.cpp PR #30054 (embeddinggemma2). Bump forward only. Release URL pattern:</p>
+<pre><code>_GH = f&quot;https://github.com/ggml-org/llama.cpp/releases/download/{LLAMA_BUILD}&quot;</code></pre>
+<p>Platform asset matrix (<code>_ASSETS: (system, machine) -&gt; (asset, exe)</code>):</p>
+<table border="1" cellpadding="6" cellspacing="0">
+<tr><th>System</th><th>Machine</th><th>Asset</th><th>Executable</th></tr>
+<tr><td>windows</td><td>amd64 / x86_64</td><td><code>llama-b11457-bin-win-cpu-x64.zip</code></td><td><code>llama-server.exe</code></td></tr>
+<tr><td>windows</td><td>arm64</td><td><code>llama-b11457-bin-win-cpu-arm64.zip</code></td><td><code>llama-server.exe</code></td></tr>
+<tr><td>linux</td><td>x86_64</td><td><code>llama-b11457-bin-ubuntu-x64.tar.gz</code></td><td><code>llama-server</code></td></tr>
+<tr><td>linux</td><td>aarch64</td><td><code>llama-b11457-bin-ubuntu-arm64.tar.gz</code></td><td><code>llama-server</code></td></tr>
+<tr><td>darwin</td><td>arm64</td><td><code>llama-b11457-bin-macos-arm64.tar.gz</code></td><td><code>llama-server</code></td></tr>
+<tr><td>darwin</td><td>x86_64</td><td><code>llama-b11457-bin-macos-x64.tar.gz</code></td><td><code>llama-server</code></td></tr>
+</table>
+<p>Windows x64 Vulkan override (<code>use_vulkan=True</code>):</p>
+<pre><code>_VULKAN_WIN = (&quot;llama-b11457-bin-win-vulkan-x64.zip&quot;, &quot;llama-server.exe&quot;)</code></pre>
+<pre><code>from acorndb import LLAMA_BUILD
+print(LLAMA_BUILD)  # &quot;b11457&quot;</code></pre>
+<h2 id="cache_dir---path"><code>cache_dir() -&gt; Path</code></h2>
+<pre><code>def cache_dir() -&gt; Path:
+    return Path.home() / &quot;.cache&quot; / &quot;acorndb&quot; / &quot;bin&quot;</code></pre>
+<p>Root for binaries, downloaded archives, and <code>llama-server.log</code>. Created on demand (<code>mkdir(parents=True, exist_ok=True)</code>).</p>
+<p>Layout after first download (example, Windows x64 CPU):</p>
+<pre><code>~/.cache/acorndb/bin/
+  llama-b11457-bin-win-cpu-x64.zip
+  llama-b11457-bin-win-cpu-x64/llama-server.exe (+ DLLs)
+  llama-server.log</code></pre>
+<h2 id="ensure_server_binary-use_vulkan-bool-false---path"><code>ensure_server_binary(*, use_vulkan: bool = False) -&gt; Path</code></h2>
+<p>Return a working <code>llama-server</code> binary path, downloading + extracting on first use. Cached: returns immediately if the extracted exe already exists.</p>
+<pre><code>from acorndb.llama_bin import ensure_server_binary
+
+exe = ensure_server_binary()                    # CPU binary
+exe = ensure_server_binary(use_vulkan=True)     # Windows x64 Vulkan binary</code></pre>
+<p>Steps:</p>
+<ol><li>Detect <code>(platform.system().lower(), platform.machine().lower())</code>.</li></ol>
+<ul><li>Windows + <code>use_vulkan</code> + amd64/x86_64 → Vulkan asset; otherwise the</li></ul>
+<p><code>_ASSETS</code> matrix.</p>
+<ul><li>Unknown platform → `RuntimeError(&quot;no prebuilt llama.cpp b11457 binary</li></ul>
+<p>for &lt;sys&gt;/&lt;machine&gt;. Install llama.cpp manually ...&quot;)`.</p>
+<ol><li><code>dest_dir = cache_dir() / &lt;asset without .tar.gz/.zip&gt;</code>,</li></ol>
+<p><code>exe_path = dest_dir / &lt;exe&gt;</code>. Return if it exists.</p>
+<ol><li>Download <code>https://github.com/.../b11457/&lt;asset&gt;</code> to</li></ol>
+<p><code>cache_dir() / &lt;asset&gt;</code> if missing (<code>_download</code>: streaming copy via <code>urllib</code>, 256 KiB chunks, 300 s timeout, atomic <code>mkstemp</code> + <code>replace</code> so Windows file locking is safe; partial file removed on failure).</p>
+<ol><li>Extract (<code>.zip</code> → <code>zipfile</code>, else <code>tarfile</code> with <code>filter=&quot;data&quot;</code> on</li></ol>
+<p>Python ≥ 3.11.4, plain <code>extractall</code> fallback).</p>
+<ol><li>If the expected path still doesn&#x27;t exist (asset layout varies), recursive</li></ol>
+<p><code>rglob(exe)</code> fallback; else <code>RuntimeError(&quot;&lt;exe&gt; not found inside &lt;asset&gt;&quot;)</code>.</p>
+<ol><li><code>chmod 0o755</code> on non-Windows. Return the exe path.</li></ol>
+<h2 id="use_vulkan-plumbing"><code>use_vulkan</code> plumbing</h2>
+<p><code>EmbeddingGemmaEmbedder(backend=&quot;server&quot;, use_vulkan=...)</code> → <code>ManagedLlamaServer(use_vulkan=...)</code> → <code>ensure_server_binary(use_vulkan=...)</code>. Only affects Windows x64; all other platforms ignore it (matrix lookup).</p>
+<h2 id="see-also">See also</h2>
+<ul><li><a href="api-server.html">Server</a> — how the binary is launched and supervised</li><li><a href="api-embedder.html">Embedder</a> — when the server backend is chosen</li><li><a href="guides.html">Guides</a> — backend troubleshooting, log location</li></ul>
+<p><a href="index.html">Docs index</a></p>
+</body>
+</html>

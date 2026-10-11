@@ -49,13 +49,13 @@ Model auto-downloads from Hugging Face on first `embed()` call into
 
 `EmbeddingGemmaEmbedder(backend=...)` resolves automatically (default `"auto"`):
 
-- `"cpp"` — in-process `llama-cpp-python`. Fastest, but requires a build
+- `"cpp"`: in-process `llama-cpp-python`. Fastest, but requires a build
   whose bundled llama.cpp knows the model arch since upstream support did not yet land.
-- `"server"` — library-managed localhost `llama-server`. The prebuilt binary
+- `"server"`: library-managed localhost `llama-server`. The prebuilt binary
   (first build with embeddinggemma2 support, currently b11457) is
   auto-downloaded to `~/.cache/acorndb/bin/`, started on 127.0.0.1 with an
   ephemeral port, and stopped on `embedder.close()`. No compiler, no setup.
-- `"auto"` — tries `"cpp"`, falls back to `"server"` when the installed
+- `"auto"`: tries `"cpp"`, falls back to `"server"` when the installed
   wheel can't load the model. Check `embedder.backend_used` to see which won.
 
 ```python

@@ -19,6 +19,7 @@ Three typed surfaces:
 | [Config (`config.py`)](api-config.md) | `EmbedConfig`, `QdrantConfig`, `AcornDBConfig`, defaults |
 | [Models (`models.py`)](api-models.md) | `DatabaseInfo`, `Document`, `SearchHit`, `Distance`, `PointId` |
 | [Embedder (`embedder.py`)](api-embedder.md) | `EmbeddingGemmaEmbedder` — backends, truncation, normalization |
+| [Multimodal (`multimodal.py`)](api-multimodal.md) | Images, video, audio & composed inputs — `EmbeddingGemmaMultimodalEmbedder`, `add_audios`, `search(audio=...)`, `embed_interleaved` |
 | [Server (`server_embedder.py`)](api-server.md) | `ManagedLlamaServer`, `parse_embedding_response` |
 | [Binaries (`llama_bin.py`)](api-llama-bin.md) | `ensure_server_binary`, `cache_dir`, `LLAMA_BUILD` |
 | [Guides](guides.md) | Backends, swapping models, Qdrant modes, error handling |

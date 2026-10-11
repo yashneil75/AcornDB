@@ -16,6 +16,7 @@ PointId = Union[int, str]</code></pre>
 <tr><th>Alias</th><th>Meaning</th></tr>
 <tr><td><code>Distance</code></td><td>Qdrant distance metric names. Literal so editors offer autocomplete. Mapped to <code>qdrant_client.models.Distance</code> (<code>COSINE</code>/<code>EUCLID</code>/<code>DOT</code>) inside <code>store.py::_to_distance</code>.</td></tr>
 <tr><td><code>PointId</code></td><td>Point ids accepted by Qdrant: <code>int</code> or <code>str</code>. Returned by <code>add</code> / <code>add_vectors</code>, carried on <code>Document.id</code> and <code>SearchHit.id</code>.</td></tr>
+<tr><td><code>Modality</code></td><td><code>&quot;text&quot;</code> | <code>&quot;image&quot;</code> | <code>&quot;video&quot;</code> | <code>&quot;audio&quot;</code> — which modality a point/hit belongs to.</td></tr>
 </table>
 <h2 id="databaseinfo"><code>DatabaseInfo</code></h2>
 <p>Metadata about one Qdrant collection (one &quot;database&quot;). Frozen + slots dataclass.</p>
@@ -59,6 +60,32 @@ db.add(&quot;notes&quot;, [
     Document(text=&quot;hello world&quot;, payload={&quot;tag&quot;: &quot;greet&quot;}, id=1),
     Document(text=&quot;qdrant is fast&quot;),
 ])</code></pre>
+<h2 id="imagedocument-videodocument"><code>ImageDocument</code> / <code>VideoDocument</code></h2>
+<p>Image/video equivalents of <code>Document</code> for <code>add_images</code> / <code>add_videos</code>. <code>image</code> accepts a path/URL, bytes, file-like object, PIL image, or numpy array; <code>video</code> accepts a path/URL, bytes, file-like object, or a list of frames. <code>ref</code> is the payload ref (defaults: paths/URLs reuse their string, everything else gets a generated id). Same rule as <code>Document</code>: when passing <code>list[ImageDocument]</code> / <code>list[VideoDocument]</code>, don&#x27;t also pass <code>refs=</code> / <code>payloads=</code> / <code>ids=</code>.</p>
+<pre><code>@dataclass(slots=True)
+class ImageDocument:
+    image: ImageInput
+    payload: dict[str, Any] = field(default_factory=dict)
+    id: PointId | None = None
+    ref: str | None = None
+    vector: list[float] | None = None   # reserved, like Document.vector
+
+@dataclass(slots=True)
+class VideoDocument:
+    video: VideoInput
+    payload: dict[str, Any] = field(default_factory=dict)
+    id: PointId | None = None
+    ref: str | None = None
+    vector: list[float] | None = None</code></pre>
+<h2 id="audiodocument"><code>AudioDocument</code></h2>
+<p>Audio equivalent for <code>add_audios</code>. <code>audio</code> accepts a path/URL, bytes, file-like object, numpy waveform, or <code>(waveform, sample_rate)</code> tuple; <code>ref</code> rules match <code>ImageDocument</code>.</p>
+<pre><code>@dataclass(slots=True)
+class AudioDocument:
+    audio: AudioInput
+    payload: dict[str, Any] = field(default_factory=dict)
+    id: PointId | None = None
+    ref: str | None = None
+    vector: list[float] | None = None   # reserved, like Document.vector</code></pre>
 <h2 id="searchhit"><code>SearchHit</code></h2>
 <p>One typed search result. Frozen + slots dataclass.</p>
 <pre><code>@dataclass(frozen=True, slots=True)
@@ -66,7 +93,11 @@ class SearchHit:
     id: PointId
     score: float
     text: str | None
-    payload: dict[str, Any]</code></pre>
+    payload: dict[str, Any]
+    modality: Modality = &quot;text&quot;   # &quot;text&quot; | &quot;image&quot; | &quot;video&quot; | &quot;audio&quot;
+    image: str | None = None      # image ref, when modality == &quot;image&quot;
+    video: str | None = None      # video ref, when modality == &quot;video&quot;
+    audio: str | None = None      # audio ref, when modality == &quot;audio&quot;</code></pre>
 <table border="1" cellpadding="6" cellspacing="0">
 <tr><th>Field</th><th>Type</th><th>Meaning</th></tr>
 <tr><td><code>id</code></td><td><code>PointId</code></td><td>Qdrant point id.</td></tr>

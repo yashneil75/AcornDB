@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Multimodal — images, video, audio &amp; composed inputs (multimodal.py)</title>
+<style>body{font-family:sans-serif;max-width:800px;margin:2em auto;padding:0 1em}pre{background:#f4f4f4;padding:1em;overflow-x:auto}code{background:#f4f4f4}pre code{background:none}table{border-collapse:collapse}th,td{text-align:left}</style>
+</head>
+<body>
+<p><a href="index.html">Docs index</a></p>
+<h1 id="multimodal-images-video-audio-composed-inputs-multimodalpy">Multimodal — images, video, audio &amp; composed inputs (<code>multimodal.py</code>)</h1>
+<p>Source: <code>acorndb/multimodal.py</code>. Re-exported from <code>acorndb/__init__.py</code>.</p>
+<p>EmbeddingGemma-2 (<code>google/embeddinggemma-2</code>, 740M params) is natively
+multimodal: text (incl. code), images, video and audio share one unified
+768-dim space (MRL-truncatable to 512/256/128), so a text query finds images,
+clips and recordings — and combined text+media inputs embed in a single pass.</p>
+<p>The GGUF path (<code>EmbeddingGemmaEmbedder</code> via llama-cpp / the managed
+llama-server) is <strong>text-only</strong> — the auto-downloaded server binary ships
+without vision/audio projectors. Non-text inputs go through
+<code>sentence-transformers</code> with the full-precision weights (Google's documented
+path). Install it with:</p>
+<pre><code>pip install -e &quot;.[multimodal]&quot;          # ST, torch, torchvision, Pillow, soundfile, librosa
+pip install -e &quot;.[multimodal,video]&quot;    # + opencv for video *files*</code></pre>
+<p>(<code>video</code> is only needed for video <em>files/bytes</em>; lists of frames need no
+decoder. Audio files decode via soundfile, falling back to stdlib <code>wave</code>
+(PCM WAV) and ffmpeg. <code>torchvision</code> serves the image processor and <code>librosa</code>
+serves audio loading inside sentence-transformers — both are in the extra.
+<code>torchcodec</code> is deliberately <em>not</em> required: video is pre-sampled and audio
+pre-normalized locally, so no model-side media decoder is ever needed.
+<code>all</code> intentionally excludes <code>multimodal</code> — torch is ~2 GB.)</p>
+<pre><code>from acorndb import AcornDB, QdrantConfig
+
+db = AcornDB(qdrant=QdrantConfig(in_memory=True))  # + pip install acorndb[multimodal]
+db.add_images(&quot;pics&quot;, [&quot;cat.jpg&quot;, &quot;dog.jpg&quot;])
+db.add_audios(&quot;sounds&quot;, [&quot;meow.wav&quot;])
+hits = db.search(&quot;pics&quot;, &quot;a cat&quot;, limit=2)   # text query -&gt; images
+hits = db.search(&quot;pics&quot;, image=&quot;query.jpg&quot;)  # image query -&gt; images
+hits = db.search(&quot;sounds&quot;, &quot;a cat meowing&quot;)  # text query -&gt; audio
+for h in hits:
+    print(h.score, h.modality, h.image, h.audio)</code></pre>
+<h2 id="backends">Backends</h2>
+<table border="1" cellpadding="6" cellspacing="0"><tr><th>Class</th><th>Text</th><th>Image / video / audio / composed</th><th>Weights</th></tr><tr><td><code>EmbeddingGemmaEmbedder</code></td><td>GGUF (<code>cpp</code>/<code>server</code>/<code>auto</code>)</td><td>delegated to a lazily-built <code>EmbeddingGemmaMultimodalEmbedder</code> (defaults)</td><td>Q4_K_XL text / full-precision media</td></tr><tr><td><code>EmbeddingGemmaMultimodalEmbedder</code></td><td>sentence-transformers</td><td>sentence-transformers</td><td>full-precision, all modalities</td></tr></table>
+<p>For cross-modal search, use one backend consistently per database —
+<code>EmbeddingGemmaMultimodalEmbedder</code> (pass as <code>AcornDB(embedder=...)</code>) is
+recommended so text and media come from the same weights.</p>
+<h2 id="multimodalconfig"><code>MultimodalConfig</code></h2>
+<pre><code>@dataclass(slots=True)
+class MultimodalConfig:
+    repo_id: str = &quot;google/embeddinggemma-2&quot;
+    model_dir: Path | None = None   # None -&gt; ST's default HF cache
+    device: str | None = None       # None -&gt; ST auto (&quot;cpu&quot;/&quot;cuda&quot;/...)
+    truncate_dim: int = 768         # one of 128/256/512/768 (MRL)
+    normalize: bool = True
+    max_frames: int = 16            # evenly-spaced frames sampled per video</code></pre>
+<p><code>truncate_dim</code> outside 128/256/512/768 and <code>max_frames &lt; 1</code> raise
+<code>ValueError</code>.</p>
+<h2 id="inputs">Inputs</h2>
+<pre><code>ImageInput = str | Path | bytes | bytearray | file-like | PIL.Image | np.ndarray
+VideoInput = str | Path | bytes | bytearray | file-like | list[ImageInput]
+AudioInput = str | Path | bytes | bytearray | file-like | np.ndarray | (np.ndarray, sample_rate)</code></pre>
+<p><code>str</code> is a local file path, or an <code>http(s)://</code> URL (downloaded). <code>bytes</code>
+are encoded file contents. numpy images are HWC (<code>uint8</code> preferred; float
+<code>0-1</code> accepted; grayscale expanded to RGB). Audio normalizes to 16 kHz mono
+float32 (<code>AUDIO_SAMPLE_RATE</code>); bare arrays are assumed 16 kHz unless given as
+an <code>(array, sample_rate)</code> tuple.</p>
+<h3 id="load_imageinp-imageinput-pilimage"><code>load_image(inp: ImageInput) -&gt; PIL.Image</code></h3>
+<p>Load anything into an RGB PIL image. Raises <code>ImportError</code> without Pillow,
+<code>ValueError</code> on missing/undecodable input.</p>
+<h3 id="load_audioinp-audioinput-sample_ratenone-npndarray"><code>load_audio(inp: AudioInput, sample_rate=None) -&gt; np.ndarray</code></h3>
+<p>Load anything into mono float32 @ 16 kHz (resampled as needed). Files decode
+via soundfile → stdlib <code>wave</code> → ffmpeg. Raises <code>ValueError</code> on
+missing/undecodable input.</p>
+<h3 id="sample_video_framesvideo-videoinput-max_frames16-listpilimage"><code>sample_video_frames(video: VideoInput, max_frames=16) -&gt; list[PIL.Image]</code></h3>
+<p>Evenly-spaced RGB frames — the same sampling <code>embed_video</code> applies to every
+input before its single native encode (no model-side decoder needed). Frame
+lists need no decoder; files/URLs/bytes decode via OpenCV, falling back to
+imageio (<code>ValueError</code> on empty/undecodable, <code>ImportError</code> with install hint
+when neither decoder is present).</p>
+<h3 id="media_refinp-kind-explicitnone-str"><code>media_ref(inp, kind, explicit=None) -&gt; str</code></h3>
+<p>Payload ref: explicit wins; paths/URLs reuse their string; anything else
+gets <code>image-&lt;hex&gt;</code> / <code>video-&lt;hex&gt;</code> / <code>audio-&lt;hex&gt;</code>.</p>
+<h2 id="embeddinggemmamultimodalembedder"><code>EmbeddingGemmaMultimodalEmbedder</code></h2>
+<pre><code>emb = EmbeddingGemmaMultimodalEmbedder(MultimodalConfig(max_frames=8))
+vec = emb.embed(&quot;hello&quot;)              # text, len truncate_dim
+vec = emb.embed_image(&quot;cat.jpg&quot;)      # image
+vec = emb.embed_video(&quot;clip.mp4&quot;)     # pre-sampled frames, one joint encode
+vec = emb.embed_audio(&quot;clip.wav&quot;)     # 16 kHz mono
+vec = emb.embed_interleaved(&quot;a cat &lt;|image|&gt;&quot;, [&quot;cat.jpg&quot;])  # joint, one pass</code></pre>
+<p>Every <code>embed_*</code> method takes an optional keyword-only <code>prompt_name</code>
+(<code>"query"</code>, <code>"document"</code>, <code>"Classification"</code>, ... — see the model card);
+prompts are never applied unless requested.</p>
+<table border="1" cellpadding="6" cellspacing="0"><tr><th>Method</th><th>Notes</th></tr><tr><td><code>embed(text)</code> / <code>embed_many(texts, batch_size=32)</code></td><td>Same contract as the GGUF embedder; <code>ValueError</code> on empty.</td></tr><tr><td><code>embed_image(image)</code> / <code>embed_images(images, batch_size=32)</code></td><td><code>[]</code> → <code>[]</code> without touching the model.</td></tr><tr><td><code>embed_video(video)</code> / <code>embed_videos(videos, batch_size=32)</code></td><td>Pre-sampled to <code>max_frames</code> frames, then one native joint encode.</td></tr><tr><td><code>embed_audio(audio)</code> / <code>embed_audios(audios, batch_size=32)</code></td><td>Every input normalized to 16 kHz mono and staged as a temp WAV (cleaned up after encode).</td></tr><tr><td><code>embed_composed(item)</code> / <code>embed_composed_many(items, batch_size=32)</code></td><td>Any <code>{"text"?, "image"?, "audio"?, "video"?}</code> dict → one vector.</td></tr><tr><td><code>embed_interleaved(text, images)</code></td><td><code>embed_composed({"text", "image"})</code> shortcut; <code>&lt;|image|&gt;</code> placeholders supported.</td></tr><tr><td><code>embed_query</code> / <code>embed_documents</code></td><td>sentence-transformers aliases.</td></tr><tr><td><code>dimension</code></td><td><code>config.truncate_dim</code>.</td></tr><tr><td><code>close()</code></td><td>Releases the model handle (no server involved).</td></tr><tr><td><code>backend_used</code></td><td><code>None</code> until first encode, then <code>"st"</code>.</td></tr></table>
+<p>Missing <code>sentence-transformers</code> raises <code>ImportError</code> with the
+<code>pip install acorndb[multimodal]</code> hint. First use downloads
+<code>google/embeddinggemma-2</code> from HF Hub.</p>
+<h2 id="composed-inputs-composedinput">Composed inputs (<code>ComposedInput</code>)</h2>
+<pre><code>class ComposedInput(TypedDict, total=False):
+    text: str
+    image: ImageInput | list[ImageInput]
+    audio: AudioInput | list[AudioInput]
+    video: VideoInput                      # one video per dict; many -&gt; many dicts</code></pre>
+<p>Without <code>&lt;|image|&gt;</code> / <code>&lt;|video|&gt;</code> / <code>&lt;|audio|&gt;</code> placeholders in <code>text</code>,
+modalities encode in dict-key order; with placeholders they interleave at the
+exact positions (counts must match the media items). No-text combos work too:</p>
+<pre><code>emb.embed_composed({&quot;text&quot;: &quot;a cat&quot;, &quot;image&quot;: &quot;cat.jpg&quot;})
+emb.embed_composed({&quot;image&quot;: photo, &quot;audio&quot;: &quot;meow.wav&quot;})
+emb.embed_composed_many([
+    &quot;plain text&quot;,
+    {&quot;image&quot;: &quot;cat.jpg&quot;},
+    {&quot;text&quot;: &quot;a cat&quot;, &quot;image&quot;: &quot;cat.jpg&quot;},
+    {&quot;audio&quot;: &quot;meow.wav&quot;},
+])  # heterogeneous batches encode in one pass</code></pre>
+<p>Validation (<code>ValueError</code>, before the model loads): non-dict/empty input,
+unknown keys, empty text, empty media lists, missing files.</p>
+<h2 id="store-surface-storepy">Store surface (<code>store.py</code>)</h2>
+<p><code>AcornDB(embedder=...)</code> accepts either embedder class (or any duck-typed
+object with the same methods; missing media methods raise <code>RuntimeError</code>
+with an install hint).</p>
+<table border="1" cellpadding="6" cellspacing="0"><tr><th>Method</th><th>Notes</th></tr><tr><td><code>embed_image(image)</code> / <code>embed_images(...)</code></td><td>Passthrough (<code>prompt_name=</code> supported).</td></tr><tr><td><code>embed_video(video)</code> / <code>embed_videos(...)</code></td><td>Passthrough (<code>prompt_name=</code> supported).</td></tr><tr><td><code>embed_audio(audio)</code> / <code>embed_audios(...)</code></td><td>Passthrough (<code>prompt_name=</code> supported).</td></tr><tr><td><code>embed_composed(item)</code> / <code>embed_composed_many(...)</code> / <code>embed_interleaved(text, images)</code></td><td>Passthrough.</td></tr><tr><td><code>add_images(db, images \| list[ImageDocument], *, refs, payloads, ids)</code></td><td>Auto-creates DB; payload <code>{"modality": "image", "image": ref, ...}</code>.</td></tr><tr><td><code>add_videos(db, videos \| list[VideoDocument], *, refs, payloads, ids)</code></td><td>Payload <code>{"modality": "video", "video": ref, ...}</code>.</td></tr><tr><td><code>add_audios(db, audios \| list[AudioDocument], *, refs, payloads, ids)</code></td><td>Payload <code>{"modality": "audio", "audio": ref, ...}</code>.</td></tr><tr><td><code>search(db, query=None, *, image=None, video=None, audio=None, composed=None, prompt_name=None, ...)</code></td><td>Exactly one of <code>query</code>/<code>image</code>/<code>video</code>/<code>audio</code>/<code>composed</code> (<code>ValueError</code> otherwise).</td></tr></table>
+<p><code>Document</code> rules carry over: <code>ImageDocument</code>/<code>VideoDocument</code>/<code>AudioDocument</code>
+input forbids parallel <code>refs=</code>/<code>payloads=</code>/<code>ids=</code>; raw inputs require
+matching lengths. To store a composed text+media record, embed it with
+<code>embed_composed</code> and upsert via <code>add_vectors</code> with the caption as <code>texts=</code>.</p>
+<p><code>SearchHit</code> gains <code>modality: "text" | "image" | "video" | "audio"</code> (default
+<code>"text"</code>, so old hits are unchanged) plus <code>image</code> / <code>video</code> / <code>audio</code> refs
+popped from the payload, mirroring <code>text</code>.</p>
+<h2 id="see-also">See also</h2>
+<ul><li><a href="api-acorndb.html">AcornDB</a> — <code>add</code>, <code>search</code>, databases</li><li><a href="api-models.html">Models</a> — <code>ImageDocument</code>, <code>VideoDocument</code>, <code>AudioDocument</code>, <code>SearchHit</code></li><li><a href="api-embedder.html">Embedder</a> — GGUF text backends</li></ul>
+<p><a href="index.html">Docs index</a></p>
+</body>
+</html>

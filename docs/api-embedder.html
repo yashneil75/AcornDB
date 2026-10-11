@@ -61,6 +61,8 @@ vec = embedder.embed(&quot;hello world&quot;)   # len 768, L2-normalized</code><
 <h3 id="aliases-sentence-transformers-conventions">Aliases (sentence-transformers conventions)</h3>
 <pre><code>embed_query(text: str) -&gt; list[float]          # == embed(text)
 embed_documents(texts: Sequence[str]) -&gt; list[list[float]]  # == embed_many(texts)</code></pre>
+<h2 id="multimodal-embed_image-embed_video-embed_audio-embed_composed-embed_interleaved-_many-variants">Multimodal (<code>embed_image</code> / <code>embed_video</code> / <code>embed_audio</code> / <code>embed_composed</code> / <code>embed_interleaved</code> + <code>_many</code> variants)</h2>
+<p>EmbeddingGemma-2 is multimodal but the GGUF runtimes are text-only (no vision/audio projectors ship with the prebuilt server binary), so these methods delegate to a lazily-built <code>EmbeddingGemmaMultimodalEmbedder</code> with default settings — same unified 768-dim space as the GGUF text vectors. They work on any <code>backend=</code> setting and need <code>pip install acorndb[multimodal]</code> (plus <code>acorndb[video]</code> for video <em>files</em>). All take an optional keyword-only <code>prompt_name</code>. See <a href="api-multimodal.html">Multimodal</a>.</p>
 <h2 id="in-process-backend-details-_get_llm">In-process backend details (<code>_get_llm</code>)</h2>
 <p>Lazily constructs <code>llama_cpp.Llama</code> with:</p>
 <pre><code>Llama(

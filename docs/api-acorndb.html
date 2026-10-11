@@ -45,6 +45,22 @@ print(hits[0].text, hits[0].score)</code></pre>
 <p>Raises <code>ValueError</code> on empty string (from the embedder).</p>
 <h3 id="embed_manytexts-sequencestr---listlistfloat"><code>embed_many(texts: Sequence[str]) -&gt; list[list[float]]</code></h3>
 <p>Embed many strings. Returns <code>[]</code> for empty input.</p>
+<h2 id="multimodal-images-video-audio-composed">Multimodal (images, video, audio, composed)</h2>
+<p>Full details in <a href="api-multimodal.html">Multimodal</a>. Summary:</p>
+<pre><code>vec = db.embed_image(&quot;cat.jpg&quot;)     # path/URL, bytes, PIL, or numpy
+vec = db.embed_audio(&quot;meow.wav&quot;)    # path/URL, bytes, waveform, (wave, sr)
+vec = db.embed_interleaved(&quot;a cat &lt;|image|&gt;&quot;, [&quot;cat.jpg&quot;])  # one pass
+
+ids = db.add_images(&quot;pics&quot;, [&quot;cat.jpg&quot;], refs=[&quot;cat-1&quot;])
+ids = db.add_audios(&quot;sounds&quot;, [&quot;meow.wav&quot;])
+
+hits = db.search(&quot;pics&quot;, &quot;a cat&quot;)                          # text query -&gt; images
+hits = db.search(&quot;pics&quot;, image=&quot;q.jpg&quot;)                    # image query
+hits = db.search(&quot;clips&quot;, video=&quot;q.mp4&quot;)                   # video query
+hits = db.search(&quot;sounds&quot;, audio=&quot;q.wav&quot;)                  # audio query
+hits = db.search(&quot;pics&quot;, composed={&quot;text&quot;: &quot;a cat&quot;, &quot;image&quot;: &quot;q.jpg&quot;})
+hits = db.search(&quot;pics&quot;, &quot;a cat&quot;, prompt_name=&quot;query&quot;)     # task-prompted query</code></pre>
+<p><code>search</code> takes exactly one of <code>query</code> / <code>image</code> / <code>video</code> / <code>audio</code> / <code>composed</code> (<code>ValueError</code> otherwise). Hits carry <code>modality</code> (<code>&quot;text&quot;</code>/<code>&quot;image&quot;</code>/<code>&quot;video&quot;</code>/<code>&quot;audio&quot;</code>) plus <code>image</code> / <code>video</code> / <code>audio</code> refs alongside <code>text</code>. <code>add_images</code> / <code>add_videos</code> / <code>add_audios</code> mirror <code>add</code> (raw inputs or <code>ImageDocument</code> / <code>VideoDocument</code> / <code>AudioDocument</code>, with parallel <code>refs=</code> / <code>payloads=</code> / <code>ids=</code>). Composed records: embed with <code>embed_composed</code>, upsert with <code>add_vectors</code>.</p>
 <h2 id="databases">Databases</h2>
 <p>Qdrant collections are exposed as &quot;databases&quot;.</p>
 <h3 id="create_databasename-vector_sizenone-distancenone-overwritefalse---databaseinfo"><code>create_database(name, *, vector_size=None, distance=None, overwrite=False) -&gt; DatabaseInfo</code></h3>

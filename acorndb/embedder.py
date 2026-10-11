@@ -47,6 +47,7 @@ class EmbeddingGemmaEmbedder:
         self._llm: object | None = None  # llama_cpp.Llama, imported lazily
         self._server: object | None = None  # ManagedLlamaServer, started lazily
         self.backend_used: str | None = None  # "cpp" | "server" once resolved
+        self._mm: object | None = None  # multimodal embedder, for vision only
 
     # -- properties -----------------------------------------------------
     @property
@@ -131,6 +132,10 @@ class EmbeddingGemmaEmbedder:
         server, self._server = self._server, None
         if server is not None:
             server.close()  # type: ignore[union-attr]
+        mm, self._mm = self._mm, None
+        close = getattr(mm, "close", None)
+        if close is not None:
+            close()
 
     def _get_llm(self):  # type: ignore[no-untyped-def]
         """Lazily construct llama_cpp.Llama with embedding=True."""
@@ -194,3 +199,56 @@ class EmbeddingGemmaEmbedder:
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         return self.embed_many(texts)
+
+    # -- multimodal (EmbeddingGemma-2 is multimodal, the GGUF runtimes are not)
+    def _get_multimodal(self):  # type: ignore[no-untyped-def]
+        """Lazily build the full-precision multimodal embedder (defaults).
+
+        The GGUF text backends (llama-cpp / llama-server) ship without
+        vision/audio projectors, so image/video/audio/composed inputs always
+        go through sentence-transformers with `google/embeddinggemma-2` --
+        the same unified space as the GGUF text vectors. Needs
+        `pip install acorndb[multimodal]`.
+        """
+        if self._mm is not None:
+            return self._mm
+        from .multimodal import EmbeddingGemmaMultimodalEmbedder
+
+        self._mm = EmbeddingGemmaMultimodalEmbedder()
+        return self._mm
+
+    def embed_image(self, image, *, prompt_name=None) -> list[float]:  # type: ignore[no-untyped-def]
+        """Embed one image (path/URL, bytes, PIL, numpy) -> unit-norm vector."""
+        return self._get_multimodal().embed_image(image, prompt_name=prompt_name)  # type: ignore[union-attr]
+
+    def embed_images(self, images, batch_size: int = 32, *, prompt_name=None) -> list[list[float]]:  # type: ignore[no-untyped-def]
+        """Embed many images."""
+        return self._get_multimodal().embed_images(images, batch_size=batch_size, prompt_name=prompt_name)  # type: ignore[union-attr]
+
+    def embed_video(self, video, *, prompt_name=None) -> list[float]:  # type: ignore[no-untyped-def]
+        """Embed one video (path/URL, bytes, frame list) -> unit-norm vector."""
+        return self._get_multimodal().embed_video(video, prompt_name=prompt_name)  # type: ignore[union-attr]
+
+    def embed_videos(self, videos, batch_size: int = 32, *, prompt_name=None) -> list[list[float]]:  # type: ignore[no-untyped-def]
+        """Embed many videos."""
+        return self._get_multimodal().embed_videos(videos, batch_size=batch_size, prompt_name=prompt_name)  # type: ignore[union-attr]
+
+    def embed_audio(self, audio, *, prompt_name=None) -> list[float]:  # type: ignore[no-untyped-def]
+        """Embed audio (path/URL, bytes, waveform, (wave, sr)) -> vector."""
+        return self._get_multimodal().embed_audio(audio, prompt_name=prompt_name)  # type: ignore[union-attr]
+
+    def embed_audios(self, audios, batch_size: int = 32, *, prompt_name=None) -> list[list[float]]:  # type: ignore[no-untyped-def]
+        """Embed many audio inputs."""
+        return self._get_multimodal().embed_audios(audios, batch_size=batch_size, prompt_name=prompt_name)  # type: ignore[union-attr]
+
+    def embed_composed(self, item, *, prompt_name=None) -> list[float]:  # type: ignore[no-untyped-def]
+        """Embed one text+media dict in a single pass -> unit-norm vector."""
+        return self._get_multimodal().embed_composed(item, prompt_name=prompt_name)  # type: ignore[union-attr]
+
+    def embed_composed_many(self, items, batch_size: int = 32, *, prompt_name=None) -> list[list[float]]:  # type: ignore[no-untyped-def]
+        """Embed many text+media dicts."""
+        return self._get_multimodal().embed_composed_many(items, batch_size=batch_size, prompt_name=prompt_name)  # type: ignore[union-attr]
+
+    def embed_interleaved(self, text, images, *, prompt_name=None) -> list[float]:  # type: ignore[no-untyped-def]
+        """Single-pass joint embedding of text + image(s)."""
+        return self._get_multimodal().embed_interleaved(text, images, prompt_name=prompt_name)  # type: ignore[union-attr]

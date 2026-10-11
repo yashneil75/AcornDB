@@ -103,6 +103,16 @@ embed_query(text: str) -> list[float]          # == embed(text)
 embed_documents(texts: Sequence[str]) -> list[list[float]]  # == embed_many(texts)
 ```
 
+## Multimodal (`embed_image` / `embed_video` / `embed_audio` / `embed_composed` / `embed_interleaved` + `_many` variants)
+
+EmbeddingGemma-2 is multimodal but the GGUF runtimes are text-only (no
+vision/audio projectors ship with the prebuilt server binary), so these
+methods delegate to a lazily-built `EmbeddingGemmaMultimodalEmbedder` with
+default settings — same unified 768-dim space as the GGUF text vectors. They
+work on any `backend=` setting and need `pip install acorndb[multimodal]`
+(plus `acorndb[video]` for video *files*). All take an optional
+keyword-only `prompt_name`. See [Multimodal](api-multimodal.md).
+
 ## In-process backend details (`_get_llm`)
 
 Lazily constructs `llama_cpp.Llama` with:

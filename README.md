@@ -7,8 +7,41 @@ Typed Python library combining **Qdrant** (vector DB) with
 Three typed surfaces:
 
 1. **Databases**: `create_database` / `delete_database` / `list_databases`
-2. **Embed**: `embed(text)` / `embed_many(texts)`
-3. **Search**: `search(database, query, limit=...)`
+2. **Embed**: `embed(text)` / `embed_many(texts)` — plus `embed_image` /
+   `embed_video` / `embed_audio`, single-pass `embed_composed` /
+   `embed_interleaved`, and `_many` batch variants, all in one unified space
+3. **Search**: `search(database, query, limit=...)` — or `search(database,
+   image=...)` / `video=` / `audio=` / `composed=` for cross-modal retrieval
+
+## Images, video, audio & interleaved inputs
+
+EmbeddingGemma-2 is natively multimodal: text, images, video and audio share
+one 768-dim space, so a text query finds images, clips and recordings, and
+combined text+media inputs embed in a single pass. The GGUF runtimes are
+text-only, so media goes through `sentence-transformers` with the
+full-precision weights (needs `pip install -e ".[multimodal]"`, plus
+`[video]` for video *files* — frame lists need no decoder):
+
+```python
+db.add_images("pics", ["cat.jpg", "dog.jpg"])   # paths, URLs, bytes, PIL, numpy
+db.add_videos("clips", ["clip.mp4", ["f1.jpg", "f2.jpg"]])
+db.add_audios("sounds", ["meow.wav"])           # paths, URLs, bytes, waveforms
+
+hits = db.search("pics", "a cat")               # text -> images
+hits = db.search("pics", image="q.jpg")         # image -> images
+hits = db.search("clips", video="q.mp4")        # video -> videos
+hits = db.search("sounds", audio="q.wav")       # audio -> recordings
+hits = db.search("pics", composed={"text": "a cat", "image": "q.jpg"})
+print(hits[0].modality, hits[0].image, hits[0].video, hits[0].audio)
+
+vec = db.embed_interleaved("a cat <|image|>", ["cat.jpg"])  # text+image, one pass
+```
+
+`embed_*` methods (and `search`) take an optional `prompt_name=` (`"query"`,
+`"document"`, ...) for task-prompted embeddings. For cross-modal search,
+embed a database's texts and media with one backend: pass
+`AcornDB(embedder=EmbeddingGemmaMultimodalEmbedder())`. See
+[`docs/api-multimodal.md`](docs/api-multimodal.md).
 
 ## Install
 
@@ -110,9 +143,14 @@ Things to know when you swap models:
 | `database_exists` | `(name) -> bool` | |
 | `embed` | `(text: str) -> list[float]` | |
 | `embed_many` | `(texts) -> list[list[float]]` | |
+| `embed_image` / `embed_images` | `(image, *, prompt_name) -> list[float]` | needs `pip install -e ".[multimodal]"` |
+| `embed_video` / `embed_videos` | `(video, *, prompt_name) -> list[float]` | video files also need `.[video]` |
+| `embed_audio` / `embed_audios` | `(audio, *, prompt_name) -> list[float]` | |
+| `embed_composed` / `embed_interleaved` | `(dict \| text+images, *, prompt_name)` | single-pass text+media |
 | `add` | `(database, texts: list[str] \| list[Document], *, payloads, ids) -> list[id]` | embeds + upserts, auto-creates DB |
-| `add_vectors` | `(database, vectors, texts, *, payloads, ids)` | skip embedding |
-| `search` | `(database, query: str \| vector, *, limit, filter, with_payload) -> list[SearchHit]` | text auto-embedded |
+| `add_images` / `add_videos` / `add_audios` | `(database, media, *, refs, payloads, ids)` | raw inputs or `ImageDocument` / `VideoDocument` / `AudioDocument` |
+| `add_vectors` | `(database, vectors, texts, *, payloads, ids)` | skip embedding (pairs with `embed_composed`) |
+| `search` | `(database, query=None, *, image=None, video=None, audio=None, composed=None, prompt_name=None, limit, filter, with_payload) -> list[SearchHit]` | exactly one of query/image/video/audio/composed |
 | `delete_points` | `(database, ids)` | |
 
 See `examples/quickstart.py` for a runnable demo.

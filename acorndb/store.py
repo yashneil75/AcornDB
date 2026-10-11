@@ -7,9 +7,36 @@ from typing import Any
 
 from .config import AcornDBConfig, EmbedConfig, QdrantConfig
 from .embedder import EmbeddingGemmaEmbedder
-from .models import DatabaseInfo, Distance, Document, PointId, SearchHit
+from .models import (
+    AudioDocument,
+    DatabaseInfo,
+    Distance,
+    Document,
+    ImageDocument,
+    Modality,
+    PointId,
+    SearchHit,
+    VideoDocument,
+)
 
 _TEXT_KEY = "text"
+_IMAGE_KEY = "image"
+_VIDEO_KEY = "video"
+_AUDIO_KEY = "audio"
+_MODALITY_KEY = "modality"
+
+
+def _infer_modality(mod: Any, text: Any, img: Any, vid: Any, aud: Any) -> Modality:
+    if mod in ("text", "image", "video", "audio"):
+        return mod  # type: ignore[return-value]
+    # Legacy points (written before modality was stored): guess from payload.
+    if img is not None:
+        return "image"
+    if vid is not None:
+        return "video"
+    if aud is not None:
+        return "audio"
+    return "text"
 
 
 def _to_distance(distance: Distance):  # type: ignore[no-untyped-def]
@@ -42,8 +69,14 @@ class AcornDB:
         *,
         qdrant: QdrantConfig | None = None,
         embed: EmbedConfig | None = None,
-        embedder: EmbeddingGemmaEmbedder | None = None,
+        embedder: Any | None = None,
     ) -> None:
+        """`embedder` is any object with `dimension` + `embed`/`embed_many`.
+
+        Pass `EmbeddingGemmaEmbedder` (GGUF text, vision via lazy
+        sentence-transformers) or `EmbeddingGemmaMultimodalEmbedder`
+        (full-precision text + image + video, best for cross-modal search).
+        """
         if config is not None and (qdrant is not None or embed is not None):
             raise ValueError("pass either config= or qdrant=/embed=, not both")
         self.config = config or AcornDBConfig(
@@ -55,7 +88,7 @@ class AcornDB:
 
     # -- embedder passthrough ("a thing to embed something") -------------
     @property
-    def embedder(self) -> EmbeddingGemmaEmbedder:
+    def embedder(self) -> Any:
         return self._embedder
 
     @property
@@ -69,6 +102,102 @@ class AcornDB:
     def embed_many(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed many strings."""
         return self._embedder.embed_many(texts)
+
+    def _media_method(self, name: str):  # type: ignore[no-untyped-def]
+        fn = getattr(self._embedder, name, None)
+        if fn is None:
+            raise RuntimeError(
+                f"the configured embedder ({type(self._embedder).__name__}) "
+                f"does not support {name}(). Use EmbeddingGemmaEmbedder or "
+                "EmbeddingGemmaMultimodalEmbedder (needs "
+                "`pip install acorndb[multimodal]` for image/video/audio and "
+                "composed inputs)."
+            )
+        return fn
+
+    def embed_image(
+        self, image: Any, *, prompt_name: str | None = None
+    ) -> list[float]:
+        """Embed one image (path/URL, bytes, PIL, numpy) -> unit-norm vector."""
+        return self._media_method("embed_image")(image, prompt_name=prompt_name)
+
+    def embed_images(
+        self,
+        images: Sequence[Any],
+        batch_size: int = 32,
+        *,
+        prompt_name: str | None = None,
+    ) -> list[list[float]]:
+        """Embed many images."""
+        return self._media_method("embed_images")(
+            images, batch_size=batch_size, prompt_name=prompt_name
+        )
+
+    def embed_video(
+        self, video: Any, *, prompt_name: str | None = None
+    ) -> list[float]:
+        """Embed one video (path/URL, bytes, frame list) -> unit-norm vector."""
+        return self._media_method("embed_video")(video, prompt_name=prompt_name)
+
+    def embed_videos(
+        self,
+        videos: Sequence[Any],
+        batch_size: int = 32,
+        *,
+        prompt_name: str | None = None,
+    ) -> list[list[float]]:
+        """Embed many videos."""
+        return self._media_method("embed_videos")(
+            videos, batch_size=batch_size, prompt_name=prompt_name
+        )
+
+    def embed_audio(
+        self, audio: Any, *, prompt_name: str | None = None
+    ) -> list[float]:
+        """Embed audio (path/URL, bytes, waveform, (wave, sr)) -> vector."""
+        return self._media_method("embed_audio")(audio, prompt_name=prompt_name)
+
+    def embed_audios(
+        self,
+        audios: Sequence[Any],
+        batch_size: int = 32,
+        *,
+        prompt_name: str | None = None,
+    ) -> list[list[float]]:
+        """Embed many audio inputs."""
+        return self._media_method("embed_audios")(
+            audios, batch_size=batch_size, prompt_name=prompt_name
+        )
+
+    def embed_composed(
+        self, item: dict[str, Any], *, prompt_name: str | None = None
+    ) -> list[float]:
+        """Embed one text+media dict in a single pass -> unit-norm vector."""
+        return self._media_method("embed_composed")(item, prompt_name=prompt_name)
+
+    def embed_composed_many(
+        self,
+        items: Sequence[dict[str, Any]],
+        batch_size: int = 32,
+        *,
+        prompt_name: str | None = None,
+    ) -> list[list[float]]:
+        """Embed many text+media dicts."""
+        return self._media_method("embed_composed_many")(
+            items, batch_size=batch_size, prompt_name=prompt_name
+        )
+
+    def embed_interleaved(
+        self,
+        text: str,
+        images: Any,
+        *,
+        prompt_name: str | None = None,
+    ) -> list[float]:
+        """Single-pass joint embedding of text + image(s)."""
+        return self._media_method("embed_interleaved")(
+            text, images, prompt_name=prompt_name
+        )
 
     # -- client ----------------------------------------------------------
     def _get_client(self):  # type: ignore[no-untyped-def]
@@ -220,6 +349,104 @@ class AcornDB:
         self._get_client().upsert(collection_name=database, points=points)
         return list(ids)
 
+    def add_images(
+        self,
+        database: str,
+        images: Sequence[Any] | Sequence[ImageDocument],
+        *,
+        refs: Sequence[str | None] | None = None,
+        payloads: Sequence[dict[str, Any]] | None = None,
+        ids: Sequence[PointId] | None = None,
+    ) -> list[PointId]:
+        """Embed `images` and upsert them into `database`.
+
+        Accepts either raw image inputs (path/URL, bytes, PIL, numpy) or
+        `list[ImageDocument]`. Each point payload carries
+        `{"modality": "image", "image": <ref>, ...}`. Returns point ids.
+        """
+        from .multimodal import media_ref
+
+        if not self.database_exists(database):
+            self.create_database(database)
+        docs = self._coerce_image_documents(images, refs=refs, payloads=payloads, ids=ids)
+        vectors = self.embed_images([d.image for d in docs])
+        points = self._media_points(docs, vectors, media_ref, "image")
+        self._get_client().upsert(collection_name=database, points=points)
+        return [p.id for p in points]  # type: ignore[return-value]
+
+    def add_videos(
+        self,
+        database: str,
+        videos: Sequence[Any] | Sequence[VideoDocument],
+        *,
+        refs: Sequence[str | None] | None = None,
+        payloads: Sequence[dict[str, Any]] | None = None,
+        ids: Sequence[PointId] | None = None,
+    ) -> list[PointId]:
+        """Embed `videos` and upsert them into `database`.
+
+        Accepts either raw video inputs (path/URL, bytes, frame lists) or
+        `list[VideoDocument]`. Each point payload carries
+        `{"modality": "video", "video": <ref>, ...}`. Returns point ids.
+        """
+        from .multimodal import media_ref
+
+        if not self.database_exists(database):
+            self.create_database(database)
+        docs = self._coerce_video_documents(videos, refs=refs, payloads=payloads, ids=ids)
+        vectors = self.embed_videos([d.video for d in docs])
+        points = self._media_points(docs, vectors, media_ref, "video")
+        self._get_client().upsert(collection_name=database, points=points)
+        return [p.id for p in points]  # type: ignore[return-value]
+
+    def add_audios(
+        self,
+        database: str,
+        audios: Sequence[Any] | Sequence[AudioDocument],
+        *,
+        refs: Sequence[str | None] | None = None,
+        payloads: Sequence[dict[str, Any]] | None = None,
+        ids: Sequence[PointId] | None = None,
+    ) -> list[PointId]:
+        """Embed `audios` and upsert them into `database`.
+
+        Accepts either raw audio inputs (path/URL, bytes, waveforms,
+        `(wave, sr)` tuples) or `list[AudioDocument]`. Each point payload
+        carries `{"modality": "audio", "audio": <ref>, ...}`. Returns ids.
+        """
+        from .multimodal import media_ref
+
+        if not self.database_exists(database):
+            self.create_database(database)
+        docs = self._coerce_audio_documents(audios, refs=refs, payloads=payloads, ids=ids)
+        vectors = self.embed_audios([d.audio for d in docs])
+        points = self._media_points(docs, vectors, media_ref, "audio")
+        self._get_client().upsert(collection_name=database, points=points)
+        return [p.id for p in points]  # type: ignore[return-value]
+
+    @staticmethod
+    def _media_points(  # type: ignore[no-untyped-def]
+        docs: Sequence[Any],
+        vectors: Sequence[Sequence[float]],
+        media_ref: Any,
+        kind: str,
+    ):
+        from qdrant_client import models
+
+        key = {"image": _IMAGE_KEY, "video": _VIDEO_KEY, "audio": _AUDIO_KEY}[kind]
+        return [
+            models.PointStruct(
+                id=d.id if d.id is not None else str(uuid.uuid4()),
+                vector=list(vec),
+                payload={
+                    _MODALITY_KEY: kind,
+                    key: media_ref(getattr(d, kind), kind, d.ref),
+                    **d.payload,
+                },
+            )
+            for d, vec in zip(docs, vectors)
+        ]
+
     def delete_points(self, database: str, ids: Sequence[PointId]) -> None:
         from qdrant_client import models
 
@@ -232,15 +459,51 @@ class AcornDB:
     def search(
         self,
         database: str,
-        query: str | Sequence[float],
+        query: str | Sequence[float] | None = None,
         *,
+        image: Any | None = None,
+        video: Any | None = None,
+        audio: Any | None = None,
+        composed: dict[str, Any] | None = None,
+        prompt_name: str | None = None,
         limit: int = 10,
         filter: Any | None = None,  # qdrant_client.models.Filter
         with_payload: bool = True,
     ) -> list[SearchHit]:
-        """Semantic search by text (auto-embedded) or raw vector."""
+        """Semantic search by text (auto-embedded), image, video, audio,
+        composed text+media dict, or raw vector.
+
+        Pass exactly one of `query` / `image` / `video` / `audio` /
+        `composed`. All modalities share EmbeddingGemma-2's unified space, so
+        a text query finds images, clips and recordings, and vice versa.
+        `prompt_name` (e.g. `"query"`) applies to the encoded query.
+        """
+        given = sum(
+            [
+                query is not None,
+                image is not None,
+                video is not None,
+                audio is not None,
+                composed is not None,
+            ]
+        )
+        if given != 1:
+            raise ValueError(
+                "pass exactly one of query / image / video / audio / composed"
+            )
         client = self._get_client()
-        vec = self._embedder.embed(query) if isinstance(query, str) else list(query)
+        if image is not None:
+            vec = self.embed_image(image, prompt_name=prompt_name)
+        elif video is not None:
+            vec = self.embed_video(video, prompt_name=prompt_name)
+        elif audio is not None:
+            vec = self.embed_audio(audio, prompt_name=prompt_name)
+        elif composed is not None:
+            vec = self.embed_composed(composed, prompt_name=prompt_name)
+        elif isinstance(query, str):
+            vec = self._embedder.embed(query)
+        else:
+            vec = list(query)  # type: ignore[arg-type]
         res = client.query_points(
             collection_name=database,
             query=vec,
@@ -254,8 +517,25 @@ class AcornDB:
             text = payload.pop(_TEXT_KEY, None)
             if isinstance(text, str) is False:
                 text = None if text is None else str(text)
+            img = payload.pop(_IMAGE_KEY, None)
+            img = None if img is None else img if isinstance(img, str) else str(img)
+            vid = payload.pop(_VIDEO_KEY, None)
+            vid = None if vid is None else vid if isinstance(vid, str) else str(vid)
+            aud = payload.pop(_AUDIO_KEY, None)
+            aud = None if aud is None else aud if isinstance(aud, str) else str(aud)
+            mod = payload.pop(_MODALITY_KEY, None)
+            modality: Modality = _infer_modality(mod, text, img, vid, aud)
             hits.append(
-                SearchHit(id=p.id, score=float(p.score), text=text, payload=payload)
+                SearchHit(
+                    id=p.id,
+                    score=float(p.score),
+                    text=text,
+                    payload=payload,
+                    modality=modality,
+                    image=img,
+                    video=vid,
+                    audio=aud,
+                )
             )
         return hits
 
@@ -283,4 +563,85 @@ class AcornDB:
         return [
             Document(text=t, payload=dict(pl), id=pid)
             for t, pl, pid in zip(strs, payloads, ids)
+        ]
+
+    @staticmethod
+    def _coerce_image_documents(
+        images: Sequence[Any] | Sequence[ImageDocument],
+        *,
+        refs: Sequence[str | None] | None,
+        payloads: Sequence[dict[str, Any]] | None,
+        ids: Sequence[PointId] | None,
+    ) -> list[ImageDocument]:
+        if not images:
+            raise ValueError("images must be non-empty")
+        if isinstance(images[0], ImageDocument):
+            docs = list(images)  # type: ignore[arg-type]
+            if refs is not None or payloads is not None or ids is not None:
+                raise ValueError("pass refs/payloads/ids inside ImageDocument, not separately")
+            return docs  # type: ignore[return-value]
+        raws = list(images)  # type: ignore[arg-type]
+        n = len(raws)
+        refs = list(refs) if refs is not None else [None for _ in range(n)]
+        payloads = list(payloads) if payloads is not None else [{} for _ in range(n)]
+        ids = list(ids) if ids is not None else [None for _ in range(n)]  # type: ignore[list-item]
+        if not (len(refs) == len(payloads) == len(ids) == n):
+            raise ValueError("refs/payloads/ids must match images length")
+        return [
+            ImageDocument(image=im, payload=dict(pl), id=pid, ref=rf)
+            for im, pl, pid, rf in zip(raws, payloads, ids, refs)
+        ]
+
+    @staticmethod
+    def _coerce_video_documents(
+        videos: Sequence[Any] | Sequence[VideoDocument],
+        *,
+        refs: Sequence[str | None] | None,
+        payloads: Sequence[dict[str, Any]] | None,
+        ids: Sequence[PointId] | None,
+    ) -> list[VideoDocument]:
+        if not videos:
+            raise ValueError("videos must be non-empty")
+        if isinstance(videos[0], VideoDocument):
+            docs = list(videos)  # type: ignore[arg-type]
+            if refs is not None or payloads is not None or ids is not None:
+                raise ValueError("pass refs/payloads/ids inside VideoDocument, not separately")
+            return docs  # type: ignore[return-value]
+        raws = list(videos)  # type: ignore[arg-type]
+        n = len(raws)
+        refs = list(refs) if refs is not None else [None for _ in range(n)]
+        payloads = list(payloads) if payloads is not None else [{} for _ in range(n)]
+        ids = list(ids) if ids is not None else [None for _ in range(n)]  # type: ignore[list-item]
+        if not (len(refs) == len(payloads) == len(ids) == n):
+            raise ValueError("refs/payloads/ids must match videos length")
+        return [
+            VideoDocument(video=v, payload=dict(pl), id=pid, ref=rf)
+            for v, pl, pid, rf in zip(raws, payloads, ids, refs)
+        ]
+
+    @staticmethod
+    def _coerce_audio_documents(
+        audios: Sequence[Any] | Sequence[AudioDocument],
+        *,
+        refs: Sequence[str | None] | None,
+        payloads: Sequence[dict[str, Any]] | None,
+        ids: Sequence[PointId] | None,
+    ) -> list[AudioDocument]:
+        if not audios:
+            raise ValueError("audios must be non-empty")
+        if isinstance(audios[0], AudioDocument):
+            docs = list(audios)  # type: ignore[arg-type]
+            if refs is not None or payloads is not None or ids is not None:
+                raise ValueError("pass refs/payloads/ids inside AudioDocument, not separately")
+            return docs  # type: ignore[return-value]
+        raws = list(audios)  # type: ignore[arg-type]
+        n = len(raws)
+        refs = list(refs) if refs is not None else [None for _ in range(n)]
+        payloads = list(payloads) if payloads is not None else [{} for _ in range(n)]
+        ids = list(ids) if ids is not None else [None for _ in range(n)]  # type: ignore[list-item]
+        if not (len(refs) == len(payloads) == len(ids) == n):
+            raise ValueError("refs/payloads/ids must match audios length")
+        return [
+            AudioDocument(audio=a, payload=dict(pl), id=pid, ref=rf)
+            for a, pl, pid, rf in zip(raws, payloads, ids, refs)
         ]

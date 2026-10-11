@@ -63,6 +63,34 @@ Raises `ValueError` on empty string (from the embedder).
 
 Embed many strings. Returns `[]` for empty input.
 
+## Multimodal (images, video, audio, composed)
+
+Full details in [Multimodal](api-multimodal.md). Summary:
+
+```python
+vec = db.embed_image("cat.jpg")     # path/URL, bytes, PIL, or numpy
+vec = db.embed_audio("meow.wav")    # path/URL, bytes, waveform, (wave, sr)
+vec = db.embed_interleaved("a cat <|image|>", ["cat.jpg"])  # one pass
+
+ids = db.add_images("pics", ["cat.jpg"], refs=["cat-1"])
+ids = db.add_audios("sounds", ["meow.wav"])
+
+hits = db.search("pics", "a cat")                          # text query -> images
+hits = db.search("pics", image="q.jpg")                    # image query
+hits = db.search("clips", video="q.mp4")                   # video query
+hits = db.search("sounds", audio="q.wav")                  # audio query
+hits = db.search("pics", composed={"text": "a cat", "image": "q.jpg"})
+hits = db.search("pics", "a cat", prompt_name="query")     # task-prompted query
+```
+
+`search` takes exactly one of `query` / `image` / `video` / `audio` /
+`composed` (`ValueError` otherwise). Hits carry `modality`
+(`"text"`/`"image"`/`"video"`/`"audio"`) plus `image` / `video` / `audio`
+refs alongside `text`. `add_images` / `add_videos` / `add_audios` mirror
+`add` (raw inputs or `ImageDocument` / `VideoDocument` / `AudioDocument`,
+with parallel `refs=` / `payloads=` / `ids=`). Composed records: embed with
+`embed_composed`, upsert with `add_vectors`.
+
 ## Databases
 
 Qdrant collections are exposed as "databases".

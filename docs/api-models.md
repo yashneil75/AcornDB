@@ -13,6 +13,7 @@ PointId = Union[int, str]
 |---|---|
 | `Distance` | Qdrant distance metric names. Literal so editors offer autocomplete. Mapped to `qdrant_client.models.Distance` (`COSINE`/`EUCLID`/`DOT`) inside `store.py::_to_distance`. |
 | `PointId` | Point ids accepted by Qdrant: `int` or `str`. Returned by `add` / `add_vectors`, carried on `Document.id` and `SearchHit.id`. |
+| `Modality` | `"text"` \| `"image"` \| `"video"` \| `"audio"` — which modality a point/hit belongs to. |
 
 ## `DatabaseInfo`
 
@@ -76,6 +77,50 @@ db.add("notes", [
 ])
 ```
 
+## `ImageDocument` / `VideoDocument`
+
+Image/video equivalents of `Document` for `add_images` / `add_videos`.
+`image` accepts a path/URL, bytes, file-like object, PIL image, or numpy
+array; `video` accepts a path/URL, bytes, file-like object, or a list of
+frames. `ref` is the payload ref (defaults: paths/URLs reuse their string,
+everything else gets a generated id). Same rule as `Document`: when passing
+`list[ImageDocument]` / `list[VideoDocument]`, don't also pass `refs=` /
+`payloads=` / `ids=`.
+
+```python
+@dataclass(slots=True)
+class ImageDocument:
+    image: ImageInput
+    payload: dict[str, Any] = field(default_factory=dict)
+    id: PointId | None = None
+    ref: str | None = None
+    vector: list[float] | None = None   # reserved, like Document.vector
+
+@dataclass(slots=True)
+class VideoDocument:
+    video: VideoInput
+    payload: dict[str, Any] = field(default_factory=dict)
+    id: PointId | None = None
+    ref: str | None = None
+    vector: list[float] | None = None
+```
+
+## `AudioDocument`
+
+Audio equivalent for `add_audios`. `audio` accepts a path/URL, bytes,
+file-like object, numpy waveform, or `(waveform, sample_rate)` tuple; `ref`
+rules match `ImageDocument`.
+
+```python
+@dataclass(slots=True)
+class AudioDocument:
+    audio: AudioInput
+    payload: dict[str, Any] = field(default_factory=dict)
+    id: PointId | None = None
+    ref: str | None = None
+    vector: list[float] | None = None   # reserved, like Document.vector
+```
+
 ## `SearchHit`
 
 One typed search result. Frozen + slots dataclass.
@@ -87,6 +132,10 @@ class SearchHit:
     score: float
     text: str | None
     payload: dict[str, Any]
+    modality: Modality = "text"   # "text" | "image" | "video" | "audio"
+    image: str | None = None      # image ref, when modality == "image"
+    video: str | None = None      # video ref, when modality == "video"
+    audio: str | None = None      # audio ref, when modality == "audio"
 ```
 
 | Field | Type | Meaning |

@@ -16,6 +16,8 @@ dependencies = [
 [project.optional-dependencies]
 embed = ["llama-cpp-python>=0.2"]
 hub = ["huggingface-hub>=0.20"]
+multimodal = ["sentence-transformers>=6.1", "transformers", "torch", "torchvision", "Pillow", "soundfile", "librosa"]
+video = ["opencv-python-headless"]
 all = ["llama-cpp-python>=0.2", "huggingface-hub>=0.20"]
 
 [build-system]

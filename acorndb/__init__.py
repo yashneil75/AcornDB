@@ -1,8 +1,8 @@
-"""EasyDB - typed Qdrant + EmbeddingGemma-2-GGUF vector library."""
+"""AcornDB - typed Qdrant + EmbeddingGemma-2-GGUF vector library."""
 from .config import (
     DEFAULT_FILENAME,
     DEFAULT_REPO_ID,
-    EasyDBConfig,
+    AcornDBConfig,
     EmbedConfig,
     QdrantConfig,
 )
@@ -10,7 +10,7 @@ from .embedder import EmbeddingGemmaEmbedder
 from .llama_bin import LLAMA_BUILD
 from .models import DatabaseInfo, Document, SearchHit
 from .server_embedder import ManagedLlamaServer, parse_embedding_response
-from .store import EasyDB
+from .store import AcornDB
 
 __all__ = [
     "DEFAULT_FILENAME",
@@ -18,8 +18,8 @@ __all__ = [
     "LLAMA_BUILD",
     "DatabaseInfo",
     "Document",
-    "EasyDB",
-    "EasyDBConfig",
+    "AcornDB",
+    "AcornDBConfig",
     "EmbedConfig",
     "EmbeddingGemmaEmbedder",
     "ManagedLlamaServer",

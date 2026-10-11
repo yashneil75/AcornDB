@@ -17,9 +17,9 @@ class FakeEmbedder:
 
 
 def make_db():  # type: ignore[no-untyped-def]
-    from easydb import EasyDB, QdrantConfig
+    from acorndb import AcornDB, QdrantConfig
 
-    return EasyDB(qdrant=QdrantConfig(in_memory=True), embedder=FakeEmbedder())  # type: ignore[arg-type]
+    return AcornDB(qdrant=QdrantConfig(in_memory=True), embedder=FakeEmbedder())  # type: ignore[arg-type]
 
 
 def test_databases_crud():
@@ -52,7 +52,7 @@ def test_embed_and_search():
 
 
 def test_config_validation():
-    from easydb import EmbedConfig
+    from acorndb import EmbedConfig
 
     try:
         EmbedConfig(truncate_dim=100)
@@ -62,7 +62,7 @@ def test_config_validation():
 
 
 def test_backend_param_validation():
-    from easydb import EmbedConfig, EmbeddingGemmaEmbedder
+    from acorndb import EmbedConfig, EmbeddingGemmaEmbedder
 
     try:
         EmbeddingGemmaEmbedder(EmbedConfig(), backend="bogus")
@@ -75,7 +75,7 @@ def test_backend_param_validation():
 
 
 def test_parse_embedding_response_shapes():
-    from easydb import parse_embedding_response
+    from acorndb import parse_embedding_response
 
     old = {"embedding": [0.1, 0.2, 0.3]}
     assert parse_embedding_response(old) == [0.1, 0.2, 0.3]

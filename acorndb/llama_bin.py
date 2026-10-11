@@ -33,7 +33,7 @@ _VULKAN_WIN = (f"llama-{LLAMA_BUILD}-bin-win-vulkan-x64.zip", "llama-server.exe"
 
 
 def cache_dir() -> Path:
-    return Path.home() / ".cache" / "easydb" / "bin"
+    return Path.home() / ".cache" / "acorndb" / "bin"
 
 
 def _download(url: str, dest: Path) -> None:
@@ -62,7 +62,7 @@ def ensure_server_binary(*, use_vulkan: bool = False) -> Path:
         except KeyError:
             raise RuntimeError(
                 f"no prebuilt llama.cpp {LLAMA_BUILD} binary for {sysname}/{machine}. "
-                "Install llama.cpp manually and point easydb at it."
+                "Install llama.cpp manually and point acorndb at it."
             ) from None
     dest_dir = cache_dir() / asset.replace(".tar.gz", "").replace(".zip", "")
     exe_path = dest_dir / exe

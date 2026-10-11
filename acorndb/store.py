@@ -5,7 +5,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from .config import EasyDBConfig, EmbedConfig, QdrantConfig
+from .config import AcornDBConfig, EmbedConfig, QdrantConfig
 from .embedder import EmbeddingGemmaEmbedder
 from .models import DatabaseInfo, Distance, Document, PointId, SearchHit
 
@@ -23,13 +23,13 @@ def _to_distance(distance: Distance):  # type: ignore[no-untyped-def]
     return mapping[distance]
 
 
-class EasyDB:
+class AcornDB:
     """One typed entry point for everything.
 
     Example:
-        from easydb import EasyDB, QdrantConfig
+        from acorndb import AcornDB, QdrantConfig
 
-        db = EasyDB(qdrant=QdrantConfig(url="http://localhost:6333"))
+        db = AcornDB(qdrant=QdrantConfig(url="http://localhost:6333"))
         db.create_database("notes")
         db.add("notes", ["hello world", "qdrant is fast"])
         hits = db.search("notes", "hello")
@@ -38,7 +38,7 @@ class EasyDB:
 
     def __init__(
         self,
-        config: EasyDBConfig | None = None,
+        config: AcornDBConfig | None = None,
         *,
         qdrant: QdrantConfig | None = None,
         embed: EmbedConfig | None = None,
@@ -46,7 +46,7 @@ class EasyDB:
     ) -> None:
         if config is not None and (qdrant is not None or embed is not None):
             raise ValueError("pass either config= or qdrant=/embed=, not both")
-        self.config = config or EasyDBConfig(
+        self.config = config or AcornDBConfig(
             qdrant=qdrant or QdrantConfig(),
             embed=embed or EmbedConfig(),
         )
@@ -78,7 +78,7 @@ class EasyDB:
             from qdrant_client import QdrantClient
         except ImportError as exc:
             raise ImportError(
-                "qdrant-client is required. Install with `pip install easydb[qdrant]`."
+                "qdrant-client is required. Install with `pip install acorndb[qdrant]`."
             ) from exc
         q = self.config.qdrant
         if q.url:
@@ -90,7 +90,7 @@ class EasyDB:
         elif q.in_memory:
             self._client = QdrantClient(":memory:")
         else:
-            # Default to in-memory so `EasyDB()` works with zero infra.
+            # Default to in-memory so `AcornDB()` works with zero infra.
             self._client = QdrantClient(":memory:")
         return self._client
 

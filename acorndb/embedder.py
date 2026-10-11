@@ -26,7 +26,7 @@ class EmbeddingGemmaEmbedder:
     auto-downloaded, no compiler or ops needed). Forced via backend=.
 
     Example:
-        from easydb import EmbedConfig, EmbeddingGemmaEmbedder
+        from acorndb import EmbedConfig, EmbeddingGemmaEmbedder
 
         embedder = EmbeddingGemmaEmbedder(EmbedConfig(truncate_dim=768))
         vec = embedder.embed("hello world")
@@ -73,7 +73,7 @@ class EmbeddingGemmaEmbedder:
         except ImportError as exc:
             raise ImportError(
                 "huggingface-hub is required for auto-download. "
-                "Install with `pip install easydb[hub]` or "
+                "Install with `pip install acorndb[hub]` or "
                 "manually download "
                 f"{self.config.repo_id}/{self.config.filename} to {dest}."
             ) from exc
@@ -141,7 +141,7 @@ class EmbeddingGemmaEmbedder:
         except ImportError as exc:
             raise ImportError(
                 "llama-cpp-python is required. Install with "
-                "`pip install easydb[embed]` (or `pip install llama-cpp-python`)."
+                "`pip install acorndb[embed]` (or `pip install llama-cpp-python`)."
             ) from exc
         model_file = str(self.ensure_model_downloaded())
         kwargs: dict = {

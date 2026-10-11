@@ -1,11 +1,11 @@
 """Runnable demo: databases -> embed -> search."""
 from __future__ import annotations
 
-from easydb import EasyDB, EmbedConfig, QdrantConfig
+from acorndb import AcornDB, EmbedConfig, QdrantConfig
 
 
 def main() -> None:
-    db = EasyDB(
+    db = AcornDB(
         qdrant=QdrantConfig(in_memory=True),
         embed=EmbedConfig(truncate_dim=768),
     )

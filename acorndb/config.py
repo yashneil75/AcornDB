@@ -1,4 +1,4 @@
-"""Typed configuration for EasyDB."""
+"""Typed configuration for AcornDB."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -19,9 +19,9 @@ class EmbedConfig:
 
     repo_id: str = DEFAULT_REPO_ID
     filename: str = DEFAULT_FILENAME
-    # Where the .gguf is cached. Defaults to ~/.cache/easydb/models.
+    # Where the .gguf is cached. Defaults to ~/.cache/acorndb/models.
     model_dir: Path = field(
-        default_factory=lambda: Path.home() / ".cache" / "easydb" / "models"
+        default_factory=lambda: Path.home() / ".cache" / "acorndb" / "models"
     )
     n_ctx: int = 8192
     n_batch: int = 512
@@ -65,7 +65,7 @@ class QdrantConfig:
 
 
 @dataclass(slots=True)
-class EasyDBConfig:
+class AcornDBConfig:
     """Top-level config bundling embedding + vector-db settings."""
 
     embed: EmbedConfig = field(default_factory=EmbedConfig)

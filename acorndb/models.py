@@ -1,4 +1,4 @@
-"""Typed dataclasses shared across EasyDB."""
+"""Typed dataclasses shared across AcornDB."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

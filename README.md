@@ -1,4 +1,4 @@
-# EasyDB
+# AcornDB
 
 Typed Python library combining **Qdrant** (vector DB) with
 **EmbeddingGemma-2 GGUF** (`unsloth/embeddinggemma-2-GGUF` /
@@ -18,7 +18,7 @@ pip install -e ".[all]"
 # For CUDA: CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
 ```
 
-Start Qdrant (or skip — `EasyDB()` defaults to in-memory):
+Start Qdrant (or skip — `AcornDB()` defaults to in-memory):
 
 ```bash
 docker run -p 6333:6333 qdrant/qdrant
@@ -27,10 +27,10 @@ docker run -p 6333:6333 qdrant/qdrant
 ## Quickstart
 
 ```python
-from easydb import EasyDB, QdrantConfig
+from acorndb import AcornDB, QdrantConfig
 
-db = EasyDB(qdrant=QdrantConfig(url="http://localhost:6333"))
-# or: db = EasyDB(qdrant=QdrantConfig(in_memory=True))
+db = AcornDB(qdrant=QdrantConfig(url="http://localhost:6333"))
+# or: db = AcornDB(qdrant=QdrantConfig(in_memory=True))
 
 db.create_database("notes", overwrite=True)   # typed -> DatabaseInfo
 db.add("notes", ["hello world", "qdrant is a vector database"])
@@ -43,7 +43,7 @@ for h in hits:
 ```
 
 Model auto-downloads from Hugging Face on first `embed()` call into
-`~/.cache/easydb/models/embeddinggemma-2-UD-Q4_K_XL.gguf`.
+`~/.cache/acorndb/models/embeddinggemma-2-UD-Q4_K_XL.gguf`.
 
 ## Embedding backends (no server ops needed)
 
@@ -53,13 +53,13 @@ Model auto-downloads from Hugging Face on first `embed()` call into
   whose bundled llama.cpp knows the model arch since upstream support did not yet land.
 - `"server"` — library-managed localhost `llama-server`. The prebuilt binary
   (first build with embeddinggemma2 support, currently b11457) is
-  auto-downloaded to `~/.cache/easydb/bin/`, started on 127.0.0.1 with an
+  auto-downloaded to `~/.cache/acorndb/bin/`, started on 127.0.0.1 with an
   ephemeral port, and stopped on `embedder.close()`. No compiler, no setup.
 - `"auto"` — tries `"cpp"`, falls back to `"server"` when the installed
   wheel can't load the model. Check `embedder.backend_used` to see which won.
 
 ```python
-from easydb import EmbedConfig, EmbeddingGemmaEmbedder
+from acorndb import EmbedConfig, EmbeddingGemmaEmbedder
 
 emb = EmbeddingGemmaEmbedder(EmbedConfig(), backend="auto")
 print(emb.embed("hello world")[:3], emb.backend_used)

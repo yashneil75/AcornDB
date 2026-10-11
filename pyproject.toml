@@ -1,5 +1,5 @@
 [project]
-name = "easydb"
+name = "acorndb"
 version = "0.1.0"
 description = "Typed Python library: Qdrant + EmbeddingGemma-2 GGUF (unsloth/embeddinggemma-2-GGUF)"
 readme = "README.md"
@@ -23,7 +23,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["easydb"]
+packages = ["acorndb"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

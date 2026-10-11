@@ -6,9 +6,9 @@ Typed Python library combining **Qdrant** (vector DB) with
 
 Three typed surfaces:
 
-1. **Databases** — `create_database` / `delete_database` / `list_databases`
-2. **Embed** — `embed(text)` / `embed_many(texts)`
-3. **Search** — `search(database, query, limit=...)`
+1. **Databases**: `create_database` / `delete_database` / `list_databases`
+2. **Embed**: `embed(text)` / `embed_many(texts)`
+3. **Search**: `search(database, query, limit=...)`
 
 ## Install
 
@@ -18,7 +18,7 @@ pip install -e ".[all]"
 # For CUDA: CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python --force-reinstall --no-cache-dir
 ```
 
-Start Qdrant (or skip — `AcornDB()` defaults to in-memory):
+Start Qdrant (or skip, `AcornDB()` defaults to in-memory):
 
 ```bash
 docker run -p 6333:6333 qdrant/qdrant
